@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NeuraSwap</title>
+  <title>TempoSwap</title>
   <link rel="stylesheet" href="/style.css" />
 </head>
 
@@ -11,14 +11,14 @@
   <!-- Top bar -->
   <header class="topbar">
     <div class="brand">
-      <img id="brandLogo" class="brand__logo" src="/assets/logo.png" alt="NeuraSwap" />
-      <div class="brand__name">NeuraSwap</div>
+      <img id="brandLogo" class="brand__logo" src="/assets/logo.png" alt="TempoSwap" />
+      <div class="brand__name">TempoSwap</div>
     </div>
 
     <div class="topbar__right">
-      <div class="pill" id="pillNetwork" title="Neura Testnet">
+      <div class="pill" id="pillNetwork" title="Tempo Moderato">
         <span class="dot" id="netDot"></span>
-        <span id="networkName">Neura Testnet</span>
+        <span id="networkName">Tempo Moderato</span>
         <span class="chev">▼</span>
       </div>
 
@@ -35,11 +35,11 @@
     <section class="card">
       <div class="card__head">
         <div>
-          <div class="card__title">NeuraSwap</div>
+          <div class="card__title">TempoSwap</div>
           <div class="card__sub">
             <span id="walletStatus">Not connected</span>
             <span class="sep">•</span>
-            <span id="balancesLine">HOUSE: 0 | BICY: 0</span>
+            <span id="balancesLine">USDC: 0 | USDT: 0 | BICI: 0 | HOUSE: 0</span>
           </div>
         </div>
 
@@ -49,7 +49,7 @@
       <!-- Tabs -->
       <div class="tabs">
         <button id="tabSwap" class="tab tab--active" type="button">Swap</button>
-        <button id="tabLiquidity" class="tab" type="button">Add Liquidity</button>
+        <button id="tabLiquidity" class="tab" type="button">Liquidity</button>
         <button id="tabFaucet" class="tab" type="button">Faucet</button>
       </div>
 
@@ -59,7 +59,13 @@
           <div class="label">From</div>
           <div class="inputRow">
             <input id="fromAmount" class="input" placeholder="0.0" inputmode="decimal" />
-            <button class="tokenPill" id="fromTokenBtn" type="button">HOUSE</button>
+            <!-- IMPORTANT: value keeps onchain token keys -->
+            <select id="fromTokenSel" class="select tokenSelect">
+              <option value="PATHUSD" selected>USDC</option>
+              <option value="ALPHAUSD">USDT</option>
+              <option value="BETAUSD">BICI</option>
+              <option value="THETAUSD">HOUSE</option>
+            </select>
           </div>
           <div class="hint">Balance: <span id="fromBal">0</span></div>
         </div>
@@ -72,13 +78,19 @@
           <div class="label">To (estimated)</div>
           <div class="inputRow">
             <input id="toAmount" class="input" placeholder="0.0" disabled />
-            <button class="tokenPill" id="toTokenBtn" type="button">BICY</button>
+            <!-- IMPORTANT: value keeps onchain token keys -->
+            <select id="toTokenSel" class="select tokenSelect">
+              <option value="ALPHAUSD" selected>USDT</option>
+              <option value="BETAUSD">BICI</option>
+              <option value="THETAUSD">HOUSE</option>
+              <option value="PATHUSD">USDC</option>
+            </select>
           </div>
           <div class="hint">Balance: <span id="toBal">0</span></div>
         </div>
 
         <div class="row2">
-          <div class="small">Rate: <span id="rateLine">—</span></div>
+          <div class="small">Pool: <span id="swapPoolLine">—</span></div>
 
           <div class="slip">
             <span class="small">Slippage</span>
@@ -92,55 +104,90 @@
           </div>
         </div>
 
+        <div class="row2" style="margin-top:8px;">
+          <div class="small">Rate: <span id="rateLine">—</span></div>
+        </div>
+
         <button id="btnSwap" class="btn btn-primary btn-big" type="button">Swap</button>
         <div id="swapMsg" class="msg"></div>
+
+        <div class="small muted" style="margin-top:10px;">
+          Note: Only USDC ↔ (USDT/BICI/HOUSE) is supported.
+        </div>
       </div>
 
-      <!-- Add Liquidity panel -->
+      <!-- Liquidity panel -->
       <div id="panelLiquidity" class="panel hidden">
-        <div class="faucetTitle">Add Liquidity</div>
-        <div class="small muted">Type ONE side, the other side auto-fills by pool ratio</div>
+        <div class="faucetTitle">Liquidity</div>
+        <div class="small muted">Select a pool, add/remove liquidity. Ratio auto-fills.</div>
 
         <div class="field">
-          <div class="label">HOUSE amount</div>
-          <div class="inputRow">
-            <input id="liqHouseAmount" class="input" placeholder="0.0" inputmode="decimal" />
-            <span class="tokenTag">HOUSE</span>
-          </div>
-          <div class="hint">Balance: <span id="liqHouseBal">0</span></div>
+          <div class="label">Pool</div>
+          <select id="liqPoolSel" class="select">
+            <option value="PATH_ALPHA" selected>USDC / USDT</option>
+            <option value="PATH_BETA">USDC / BICI</option>
+            <option value="PATH_THETA">USDC / HOUSE</option>
+          </select>
         </div>
 
-        <div class="field">
-          <div class="label">BICY amount</div>
-          <div class="inputRow">
-            <input id="liqBicyAmount" class="input" placeholder="0.0" inputmode="decimal" />
-            <span class="tokenTag">BICY</span>
-          </div>
-          <div class="hint">Balance: <span id="liqBicyBal">0</span></div>
-        </div>
-
-        <!-- NEW: ratio + preview -->
-        <div class="row2" style="margin-top:8px;">
+        <div class="row2">
           <div class="small">Pool ratio: <span id="liqRatio">—</span></div>
+          <div class="small">Your LP shares: <span id="lpSharesLine">—</span></div>
         </div>
+
+        <div class="field" style="margin-top:10px;">
+          <div class="label" id="liqALabel">Token A amount</div>
+          <div class="inputRow">
+            <input id="liqAAmount" class="input" placeholder="0.0" inputmode="decimal" />
+            <span class="tokenTag" id="liqATag">USDC</span>
+          </div>
+          <div class="hint">Balance: <span id="liqABal">0</span></div>
+        </div>
+
+        <div class="field">
+          <div class="label" id="liqBLabel">Token B amount</div>
+          <div class="inputRow">
+            <input id="liqBAmount" class="input" placeholder="0.0" inputmode="decimal" />
+            <span class="tokenTag" id="liqBTag">USDT</span>
+          </div>
+          <div class="hint">Balance: <span id="liqBBal">0</span></div>
+        </div>
+
         <div class="small" id="liqPreview" style="margin-top:6px;">You will add: —</div>
 
         <button id="btnAddLiquidity" class="btn btn-primary btn-big" type="button">Add Liquidity</button>
+
+        <div class="field" style="margin-top:12px;">
+          <div class="label">Remove (by LP shares)</div>
+          <div class="inputRow">
+            <input id="liqRemoveShares" class="input" placeholder="0.0" inputmode="decimal" />
+            <span class="tokenTag">SHARES</span>
+          </div>
+          <div class="hint">Tip: use max shares from “Your LP shares”.</div>
+        </div>
+
+        <button id="btnRemoveLiquidity" class="btn btn-ghost btn-big" type="button">Remove Liquidity</button>
+
         <div id="liqMsg" class="msg"></div>
       </div>
 
       <!-- Faucet panel -->
       <div id="panelFaucet" class="panel hidden">
-        <div class="faucetTitle">Faucet: HOUSE / BICY</div>
-        <div class="small muted">Claim test tokens (cooldown per address)</div>
+        <div class="faucetTitle">Faucet</div>
+        <div class="small muted">Claim 100 tokens per click (cooldown per token).</div>
 
-        <div class="faucetBtns">
-          <button id="btnClaimBoth" class="btn btn-primary" type="button">
-            Claim 100 HOUSE + 100 BICY
-          </button>
+        <div class="faucetBtns" style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button id="btnClaimPATH" class="btn btn-primary" type="button">Claim 100 USDC</button>
+          <button id="btnClaimALPHA" class="btn btn-primary" type="button">Claim 100 USDT</button>
+          <button id="btnClaimBETA" class="btn btn-primary" type="button">Claim 100 BICI</button>
+          <button id="btnClaimTHETA" class="btn btn-primary" type="button">Claim 100 HOUSE</button>
         </div>
 
         <div id="faucetMsg" class="msg"></div>
+
+        <div class="small muted" style="margin-top:10px;">
+          On Tempo, remember to set your fee token (e.g., USDT) in wallet settings.
+        </div>
       </div>
     </section>
   </main>

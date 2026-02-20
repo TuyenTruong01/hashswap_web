@@ -214,3 +214,86 @@ body{
   font-weight: 900;
   margin-top: 6px;
 }
+
+/* ===== Token select (Swap) ===== */
+.tokenSelect{
+  border: 1px solid rgba(0,0,0,.10);
+  background: rgba(255,255,255,.9);
+  border-radius: 999px;
+  padding: 10px 14px;
+  font-weight:800;
+  outline:none;
+  cursor:pointer;
+  min-width:120px;
+}
+
+/* ===== LP shares highlight ===== */
+#lpSharesLine{
+  font-weight:800;
+  color:#111;
+}
+
+/* ===== Liquidity remove section spacing ===== */
+#panelLiquidity .field + .field{
+  margin-top: 14px;
+}
+
+/* ===== Make card scrollable if content grows ===== */
+.card{
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+}
+
+/* nice scrollbar */
+.card::-webkit-scrollbar{
+  width:8px;
+}
+.card::-webkit-scrollbar-thumb{
+  background: rgba(0,0,0,.18);
+  border-radius:999px;
+}
+
+/* ===== Faucet 4-button layout fix ===== */
+.faucetBtns{
+  display:flex;
+  gap:12px;
+  margin-top:14px;
+  flex-wrap:wrap;
+}
+
+.faucetBtns .btn{
+  flex:1 1 calc(50% - 12px);
+}
+
+/* ===== Liquidity preview styling ===== */
+#liqPreview{
+  font-weight:700;
+  color:#111;
+}
+
+/* ===== Pool selector nicer ===== */
+#liqPoolSel{
+  width:100%;
+}
+
+/* ===== Disabled button styling ===== */
+.btn:disabled{
+  opacity:.6;
+  cursor:not-allowed;
+}
+
+/* ===== Responsive adjustments ===== */
+@media (max-width: 480px){
+  .card{
+    width:100%;
+    border-radius:14px;
+  }
+
+  .input{
+    font-size:18px;
+  }
+
+  .faucetBtns .btn{
+    flex:1 1 100%;
+  }
+}
