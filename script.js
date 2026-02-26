@@ -45,10 +45,8 @@ import { ethers } from "ethers";
   const toTokenSel = document.getElementById("toTokenSel");
 
   // Faucet DOM
-  const btnClaimPATH = document.getElementById("btnClaimPATH");
-  const btnClaimALPHA = document.getElementById("btnClaimALPHA");
-  const btnClaimBETA = document.getElementById("btnClaimBETA");
-  const btnClaimTHETA = document.getElementById("btnClaimTHETA");
+  const btnClaimTPI = document.getElementById("btnClaimTPI");
+  const btnClaimTXI = document.getElementById("btnClaimTXI");
   const faucetMsg = document.getElementById("faucetMsg");
 
   // Liquidity DOM
@@ -81,23 +79,18 @@ import { ethers } from "ethers";
   const TOKENS = CFG.contracts.TOKENS;
   const POOLS = CFG.contracts.POOLS;
 
-  // token contracts
   const tokenCtrs = {}; // symbol -> Contract
   const tokenDec = {};  // symbol -> number
 
-  // faucet
   let faucet = null;
 
-  // current pool contract for swap/liquidity
-  let activePoolKey = "PATH_ALPHA"; // PATH_ALPHA | PATH_BETA | PATH_THETA
+  let activePoolKey = "TPI_TXI";
   let amm = null;
 
-  // swap tokens (onchain keys)
-  let fromToken = CFG.ui.defaultFrom || "PATHUSD";
-  let toToken = CFG.ui.defaultTo || "ALPHAUSD";
+  let fromToken = CFG.ui.defaultFrom || "TPI";
+  let toToken = CFG.ui.defaultTo || "TXI";
 
-  // liquidity input sync
-  let liqLastEdited = "A"; // "A" | "B"
+  let liqLastEdited = "A";
   let liqIsSyncing = false;
 
   // ===== Helpers =====
@@ -184,24 +177,12 @@ import { ethers } from "ethers";
   }
 
   function resolvePoolForPair(a, b) {
-    // Only support PATHUSD <-> (ALPHA/BETA/THETA)
-    const base = CFG.ui.baseToken || "PATHUSD";
-    if (a === base && b === "ALPHAUSD") return "PATH_ALPHA";
-    if (a === "ALPHAUSD" && b === base) return "PATH_ALPHA";
-
-    if (a === base && b === "BETAUSD") return "PATH_BETA";
-    if (a === "BETAUSD" && b === base) return "PATH_BETA";
-
-    if (a === base && b === "THETAUSD") return "PATH_THETA";
-    if (a === "THETAUSD" && b === base) return "PATH_THETA";
-
+    if ((a === "TPI" && b === "TXI") || (a === "TXI" && b === "TPI")) return "TPI_TXI";
     return null;
   }
 
   function getPoolAddress(poolKey) {
-    if (poolKey === "PATH_ALPHA") return POOLS.PATH_ALPHA;
-    if (poolKey === "PATH_BETA") return POOLS.PATH_BETA;
-    if (poolKey === "PATH_THETA") return POOLS.PATH_THETA;
+    if (poolKey === "TPI_TXI") return POOLS.TPI_TXI;
     return null;
   }
 
@@ -224,7 +205,6 @@ import { ethers } from "ethers";
 
     faucet = new ethers.Contract(CFG.contracts.FAUCET, faucetAbi, conn);
 
-    // active amm
     amm = makeAmm(activePoolKey);
   }
 
@@ -247,26 +227,13 @@ import { ethers } from "ethers";
   }
 
   function enforceSwapPair() {
-    const base = CFG.ui.baseToken || "PATHUSD";
-
-    // disallow same token
     if (fromToken === toToken) {
-      toToken = (fromToken === base) ? "ALPHAUSD" : base;
+      toToken = (fromToken === "TPI") ? "TXI" : "TPI";
       setSwapSelects();
     }
 
     const poolKey = resolvePoolForPair(fromToken, toToken);
-    if (!poolKey) {
-      // force to base routing: if neither is base, set "to" = base
-      if (fromToken !== base) {
-        toToken = base;
-      } else {
-        toToken = "ALPHAUSD";
-      }
-      setSwapSelects();
-    }
-
-    activePoolKey = resolvePoolForPair(fromToken, toToken) || "PATH_ALPHA";
+    activePoolKey = poolKey || "TPI_TXI";
     amm = makeAmm(activePoolKey);
 
     setSwapPoolLine();
@@ -274,7 +241,7 @@ import { ethers } from "ethers";
 
   async function refreshBalances() {
     if (!provider || !account) {
-      balancesLineEl.textContent = `${labelOf("PATHUSD")}: 0 | ${labelOf("ALPHAUSD")}: 0 | ${labelOf("BETAUSD")}: 0 | ${labelOf("THETAUSD")}: 0`;
+      balancesLineEl.textContent = `${labelOf("TPI")}: 0 | ${labelOf("TXI")}: 0`;
       fromBalEl.textContent = "0";
       toBalEl.textContent = "0";
       liqABalEl.textContent = "0";
@@ -284,7 +251,7 @@ import { ethers } from "ethers";
     }
 
     try {
-      const syms = ["PATHUSD", "ALPHAUSD", "BETAUSD", "THETAUSD"];
+      const syms = ["TPI", "TXI"];
 
       const bals = await Promise.all(
         syms.map((s) => tokenCtrs[s].balanceOf(account))
@@ -293,22 +260,20 @@ import { ethers } from "ethers";
       const fmt = {};
       for (let i = 0; i < syms.length; i++) {
         const s = syms[i];
-        const d = tokenDec[s] ?? 6;
+        const d = tokenDec[s] ?? 18;
         fmt[s] = ethers.formatUnits(bals[i], d);
       }
 
       balancesLineEl.textContent =
-        `${labelOf("PATHUSD")}: ${trimNum(fmt.PATHUSD)} | ${labelOf("ALPHAUSD")}: ${trimNum(fmt.ALPHAUSD)} | ${labelOf("BETAUSD")}: ${trimNum(fmt.BETAUSD)} | ${labelOf("THETAUSD")}: ${trimNum(fmt.THETAUSD)}`;
+        `${labelOf("TPI")}: ${trimNum(fmt.TPI)} | ${labelOf("TXI")}: ${trimNum(fmt.TXI)}`;
 
       fromBalEl.textContent = trimNum(fmt[fromToken] || "0");
       toBalEl.textContent = trimNum(fmt[toToken] || "0");
 
-      // liquidity balance display depends on selected pool
       const liqPair = getLiquidityPair();
       liqABalEl.textContent = trimNum(fmt[liqPair.a] || "0");
       liqBBalEl.textContent = trimNum(fmt[liqPair.b] || "0");
 
-      // lp shares (active pool in liquidity selector, not swap)
       const pool = makeAmm(liqPair.poolKey);
       if (pool) {
         const [myShares, totalShares] = await Promise.all([
@@ -323,11 +288,7 @@ import { ethers } from "ethers";
   }
 
   function getLiquidityPair() {
-    // based on liqPoolSel
-    const key = liqPoolSel.value || "PATH_ALPHA";
-    if (key === "PATH_ALPHA") return { a: "PATHUSD", b: "ALPHAUSD", poolKey: "PATH_ALPHA" };
-    if (key === "PATH_BETA") return { a: "PATHUSD", b: "BETAUSD", poolKey: "PATH_BETA" };
-    return { a: "PATHUSD", b: "THETAUSD", poolKey: "PATH_THETA" };
+    return { a: "TPI", b: "TXI", poolKey: "TPI_TXI" };
   }
 
   function setLiquidityLabels() {
@@ -362,7 +323,7 @@ import { ethers } from "ethers";
       makeContracts();
 
       // decimals
-      const syms = ["PATHUSD", "ALPHAUSD", "BETAUSD", "THETAUSD"];
+      const syms = ["TPI", "TXI"];
       const decs = await Promise.all(syms.map((s) => tokenCtrs[s].decimals()));
       for (let i = 0; i < syms.length; i++) tokenDec[syms[i]] = Number(decs[i]);
 
@@ -370,11 +331,9 @@ import { ethers } from "ethers";
       walletStatusEl.textContent = `Connected: ${shortAddr(account)}`;
       setConnectedUI(true);
 
-      // Set faucet button labels (UI only)
-      if (btnClaimPATH) btnClaimPATH.textContent = `Claim 100 ${labelOf("PATHUSD")}`;
-      if (btnClaimALPHA) btnClaimALPHA.textContent = `Claim 100 ${labelOf("ALPHAUSD")}`;
-      if (btnClaimBETA) btnClaimBETA.textContent = `Claim 100 ${labelOf("BETAUSD")}`;
-      if (btnClaimTHETA) btnClaimTHETA.textContent = `Claim 100 ${labelOf("THETAUSD")}`;
+      // Faucet button labels
+      if (btnClaimTPI) btnClaimTPI.textContent = `Claim 100 ${labelOf("TPI")}`;
+      if (btnClaimTXI) btnClaimTXI.textContent = `Claim 100 ${labelOf("TXI")}`;
 
       enforceSwapPair();
       setLiquidityLabels();
@@ -402,7 +361,7 @@ import { ethers } from "ethers";
     amm = null;
 
     walletStatusEl.textContent = "Not connected";
-    balancesLineEl.textContent = `${labelOf("PATHUSD")}: 0 | ${labelOf("ALPHAUSD")}: 0 | ${labelOf("BETAUSD")}: 0 | ${labelOf("THETAUSD")}: 0`;
+    balancesLineEl.textContent = `${labelOf("TPI")}: 0 | ${labelOf("TXI")}: 0`;
     fromBalEl.textContent = "0";
     toBalEl.textContent = "0";
     liqABalEl.textContent = "0";
@@ -424,9 +383,9 @@ import { ethers } from "ethers";
     setMsg(liqMsg, "");
     setMsg(faucetMsg, "");
 
-    fromToken = CFG.ui.defaultFrom || "PATHUSD";
-    toToken = CFG.ui.defaultTo || "ALPHAUSD";
-    activePoolKey = "PATH_ALPHA";
+    fromToken = CFG.ui.defaultFrom || "TPI";
+    toToken = CFG.ui.defaultTo || "TXI";
+    activePoolKey = "TPI_TXI";
 
     setConnectedUI(false);
   }
@@ -446,8 +405,8 @@ import { ethers } from "ethers";
     setMsg(liqMsg, "");
     setMsg(faucetMsg, "");
 
-    fromToken = CFG.ui.defaultFrom || "PATHUSD";
-    toToken = CFG.ui.defaultTo || "ALPHAUSD";
+    fromToken = CFG.ui.defaultFrom || "TPI";
+    toToken = CFG.ui.defaultTo || "TXI";
     setSwapSelects();
     enforceSwapPair();
     setLiquidityLabels();
@@ -459,16 +418,8 @@ import { ethers } from "ethers";
 
   // ---------- Swap ----------
   function getAToBForPool(poolKey, fromSym, toSym) {
-    // In our deploy, tokenA is PATHUSD for all pools, tokenB is ALPHA/BETA/THETA.
-    const base = CFG.ui.baseToken || "PATHUSD";
-    if (poolKey === "PATH_ALPHA") {
-      return (fromSym === base && toSym === "ALPHAUSD");
-    }
-    if (poolKey === "PATH_BETA") {
-      return (fromSym === base && toSym === "BETAUSD");
-    }
-    // PATH_THETA
-    return (fromSym === base && toSym === "THETAUSD");
+    // tokenA = TPI, tokenB = TXI (deploy AMM(TPI, TXI))
+    return (fromSym === "TPI" && toSym === "TXI");
   }
 
   async function updateQuote() {
@@ -485,8 +436,8 @@ import { ethers } from "ethers";
     try {
       enforceSwapPair();
 
-      const decIn = tokenDec[fromToken] ?? 6;
-      const decOut = tokenDec[toToken] ?? 6;
+      const decIn = tokenDec[fromToken] ?? 18;
+      const decOut = tokenDec[toToken] ?? 18;
 
       const amountIn = ethers.parseUnits(raw, decIn);
       const aToB = getAToBForPool(activePoolKey, fromToken, toToken);
@@ -523,7 +474,7 @@ import { ethers } from "ethers";
     try {
       enforceSwapPair();
 
-      const decIn = tokenDec[fromToken] ?? 6;
+      const decIn = tokenDec[fromToken] ?? 18;
       const tokenIn = tokenCtrs[fromToken];
       const poolAddr = getPoolAddress(activePoolKey);
 
@@ -566,7 +517,7 @@ import { ethers } from "ethers";
       const ok = await faucet[CFG.fn.faucetCanClaim](account, TOKENS[sym]);
       return Boolean(ok);
     } catch (_) {
-      return true; // if view fails, allow attempt
+      return true;
     }
   }
 
@@ -588,15 +539,13 @@ import { ethers } from "ethers";
       }
 
       const fnMap = {
-        PATHUSD: CFG.fn.faucetClaimPath,
-        ALPHAUSD: CFG.fn.faucetClaimAlpha,
-        BETAUSD: CFG.fn.faucetClaimBeta,
-        THETAUSD: CFG.fn.faucetClaimTheta
+        TPI: CFG.fn.faucetClaimTPI,
+        TXI: CFG.fn.faucetClaimTXI
       };
 
       const fn = fnMap[sym];
       if (!fn || typeof faucet[fn] !== "function") {
-        // fallback to claim(address)
+        // fallback to claim(address token)
         setMsg(faucetMsg, `Claiming ${labelOf(sym)}…`);
         const tx0 = await faucet.claim(TOKENS[sym], { gasLimit: 250000n });
         const rc0 = await tx0.wait();
@@ -645,7 +594,6 @@ import { ethers } from "ethers";
     const pool = makeAmm(pair.poolKey);
     if (!pool) return;
 
-    // update lp shares display (in this pool)
     try {
       const [myShares, totalShares] = await Promise.all([
         pool[CFG.fn.ammSharesOf](account),
@@ -675,10 +623,9 @@ import { ethers } from "ethers";
     const rA = reserves.rA;
     const rB = reserves.rB;
 
-    const decA = tokenDec[pair.a] ?? 6;
-    const decB = tokenDec[pair.b] ?? 6;
+    const decA = tokenDec[pair.a] ?? 18;
+    const decB = tokenDec[pair.b] ?? 18;
 
-    // pool empty
     if (rA === 0n || rB === 0n) {
       liqRatioEl.textContent = "empty pool (set initial amounts)";
       if (rawA0 && rawB0) setLiqPreview(rawA0, rawB0, pair.a, pair.b);
@@ -772,8 +719,8 @@ import { ethers } from "ethers";
     btnAddLiquidity.disabled = true;
 
     try {
-      const decA = tokenDec[pair.a] ?? 6;
-      const decB = tokenDec[pair.b] ?? 6;
+      const decA = tokenDec[pair.a] ?? 18;
+      const decB = tokenDec[pair.b] ?? 18;
 
       const amtA = ethers.parseUnits(rawA, decA);
       const amtB = ethers.parseUnits(rawB, decB);
@@ -898,13 +845,11 @@ import { ethers } from "ethers";
 
   btnSwap?.addEventListener("click", doSwap);
 
-  // faucet buttons (onchain keys unchanged)
-  btnClaimPATH?.addEventListener("click", () => doClaim("PATHUSD", btnClaimPATH));
-  btnClaimALPHA?.addEventListener("click", () => doClaim("ALPHAUSD", btnClaimALPHA));
-  btnClaimBETA?.addEventListener("click", () => doClaim("BETAUSD", btnClaimBETA));
-  btnClaimTHETA?.addEventListener("click", () => doClaim("THETAUSD", btnClaimTHETA));
+  // faucet buttons
+  btnClaimTPI?.addEventListener("click", () => doClaim("TPI", btnClaimTPI));
+  btnClaimTXI?.addEventListener("click", () => doClaim("TXI", btnClaimTXI));
 
-  // liquidity
+  // liquidity (only 1 pool)
   liqPoolSel?.addEventListener("change", async () => {
     setLiquidityLabels();
     liqAAmountEl.value = "";
@@ -949,11 +894,8 @@ import { ethers } from "ethers";
   setConnectedUI(false);
   setTab("swap");
 
-  // set defaults
   setSwapSelects();
   enforceSwapPair();
   setLiquidityLabels();
-
-  // also update pool line on load
   setSwapPoolLine();
 })();

@@ -1,49 +1,36 @@
 // public/config.js
 window.APP_CONFIG = {
-  appName: "TempoSwap",
+  appName: "TipiSwap",
 
-  // ===== Tempo Moderato Testnet =====
+  // ===== IoTeX Testnet =====
   chain: {
-    chainIdHex: "0xa5bf", // 42431
-    chainName: "Tempo Moderato",
-    rpcUrls: ["https://rpc.moderato.tempo.xyz"],
-    // Tempo uses fee tokens; still keep a placeholder nativeCurrency for wallet UI compatibility
-    nativeCurrency: { name: "Tempo", symbol: "TEMPO", decimals: 18 },
-    // If you have an explorer URL, put it here; otherwise keep empty array
-    blockExplorerUrls: []
+    chainIdHex: "0x1252", // 4690
+    chainName: "IoTeX Testnet",
+    rpcUrls: ["https://babel-api.testnet.iotex.io"],
+    nativeCurrency: { name: "IoTeX", symbol: "IOTX", decimals: 18 },
+    blockExplorerUrls: ["https://testnet.iotexscan.io"]
   },
 
   // ===== Contracts (deployed) =====
   contracts: {
     TOKENS: {
-      PATHUSD:  "0x63b76b6d0244fd5DcC76BF3a42403b216639F6B7",
-      ALPHAUSD: "0xD14AB69ed05C960dc0496b4d32CF4c974fF16264",
-      BETAUSD:  "0x51EcC9913A0fB21C9Daa433e8C14c9f0118567Fe",
-      THETAUSD: "0x7003e64ecaCdaff1fE990466A1C372C4593Fe7d6"
+      TPI: "0xB21d98e7c364b7b947e9B02bB53a2d361557C1bC",
+      TXI: "0x03ee39B1e6Fb726429350199bf6056664c6cE3Ee"
     },
-    FAUCET: "0x58611f480c4070Ff30f6C2c535D689E2A081Fc63",
+    FAUCET: "0x1C87525CDB3027A24617496EF6d7447b95cE21da",
     POOLS: {
-      PATH_ALPHA: "0xbbB2Ff14F4a2d3E80088D4dbfE4C2dC5204Deb52",
-      PATH_BETA:  "0x9f646af18368aE46893f33FDBb0Df6E64ed7D0C4",
-      PATH_THETA: "0x47c3A88FDa64c81A7bBf493Efbb97324014FB838"
+      TPI_TXI: "0xb06DF8063B6582918f5Bfe1dEBf6beA03F51c534"
     }
   },
 
-  // ✅ UI labels (ONLY display names, onchain contracts unchanged)
+  // ✅ UI labels (ONLY display names)
   labels: {
-    // token key -> display label
-    PATHUSD: "USDC",
-    ALPHAUSD: "USDT",
-    BETAUSD: "BICI",
-    THETAUSD: "HOUSE",
-
-    // optional pool labels
-    PATH_ALPHA: "USDC/USDT",
-    PATH_BETA: "USDC/BICI",
-    PATH_THETA: "USDC/HOUSE"
+    TPI: "TPI",
+    TXI: "TXI",
+    TPI_TXI: "TPI/TXI"
   },
 
-  // ===== ABI paths (served from Vite public/) =====
+  // ===== ABI paths (served from public/) =====
   abi: {
     erc20: "/abi/erc20.json",
     faucet: "/abi/faucet.json",
@@ -52,14 +39,12 @@ window.APP_CONFIG = {
 
   // ===== Function mapping =====
   fn: {
-    // Faucet (MultiFaucet)
-    faucetClaimPath: "claimPath",
-    faucetClaimAlpha: "claimAlpha",
-    faucetClaimBeta: "claimBeta",
-    faucetClaimTheta: "claimTheta",
+    // Faucet (DualFaucet)
+    faucetClaimTPI: "claimTPI",
+    faucetClaimTXI: "claimTXI",
     faucetCanClaim: "canClaim",
 
-    // AMM (SimpleAMM Option B)
+    // AMM (SimpleAMM)
     ammReserves: "reserves",
     ammGetAmountOut: "getAmountOut",
     ammSwap: "swap",
@@ -70,12 +55,9 @@ window.APP_CONFIG = {
   },
 
   ui: {
-    // swap defaults (still using onchain token keys)
-    defaultFrom: "PATHUSD",
-    defaultTo: "ALPHAUSD",
+    defaultFrom: "TPI",
+    defaultTo: "TXI",
     slippageDefaultPct: 0.5,
-
-    // routing: only PATH as base (still onchain key)
-    baseToken: "PATHUSD"
+    baseToken: "TPI"
   }
 };

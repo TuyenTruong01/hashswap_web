@@ -1,17 +1,52 @@
 [
-  { "type": "function", "name": "pathUSD",  "stateMutability": "view", "inputs": [], "outputs": [{ "name": "", "type": "address" }] },
-  { "type": "function", "name": "alphaUSD", "stateMutability": "view", "inputs": [], "outputs": [{ "name": "", "type": "address" }] },
-  { "type": "function", "name": "betaUSD",  "stateMutability": "view", "inputs": [], "outputs": [{ "name": "", "type": "address" }] },
-  { "type": "function", "name": "thetaUSD", "stateMutability": "view", "inputs": [], "outputs": [{ "name": "", "type": "address" }] },
+  { "type": "function", "name": "tpi", "stateMutability": "view", "inputs": [], "outputs": [{ "name": "", "type": "address" }] },
+  { "type": "function", "name": "txi", "stateMutability": "view", "inputs": [], "outputs": [{ "name": "", "type": "address" }] },
 
-  { "type": "function", "name": "isSupported", "stateMutability": "view", "inputs": [{ "name": "token", "type": "address" }], "outputs": [{ "name": "", "type": "bool" }] },
-  { "type": "function", "name": "canClaim", "stateMutability": "view", "inputs": [{ "name": "user", "type": "address" }, { "name": "token", "type": "address" }], "outputs": [{ "name": "", "type": "bool" }] },
-  { "type": "function", "name": "lastClaimAt", "stateMutability": "view", "inputs": [{ "name": "user", "type": "address" }, { "name": "token", "type": "address" }], "outputs": [{ "name": "", "type": "uint256" }] },
+  { "type": "function", "name": "admin", "stateMutability": "view", "inputs": [], "outputs": [{ "name": "", "type": "address" }] },
 
-  { "type": "function", "name": "claim", "stateMutability": "nonpayable", "inputs": [{ "name": "token", "type": "address" }], "outputs": [] },
+  { "type": "function", "name": "CLAIM_AMOUNT", "stateMutability": "view", "inputs": [], "outputs": [{ "name": "", "type": "uint256" }] },
+  { "type": "function", "name": "COOLDOWN", "stateMutability": "view", "inputs": [], "outputs": [{ "name": "", "type": "uint256" }] },
 
-  { "type": "function", "name": "claimPath",  "stateMutability": "nonpayable", "inputs": [], "outputs": [] },
-  { "type": "function", "name": "claimAlpha", "stateMutability": "nonpayable", "inputs": [], "outputs": [] },
-  { "type": "function", "name": "claimBeta",  "stateMutability": "nonpayable", "inputs": [], "outputs": [] },
-  { "type": "function", "name": "claimTheta", "stateMutability": "nonpayable", "inputs": [], "outputs": [] }
+  { "type": "function", "name": "lastClaimAt", "stateMutability": "view",
+    "inputs": [
+      { "name": "user", "type": "address" },
+      { "name": "token", "type": "address" }
+    ],
+    "outputs": [{ "name": "", "type": "uint256" }]
+  },
+
+  { "type": "function", "name": "isSupported", "stateMutability": "view",
+    "inputs": [{ "name": "token", "type": "address" }],
+    "outputs": [{ "name": "", "type": "bool" }]
+  },
+
+  { "type": "function", "name": "canClaim", "stateMutability": "view",
+    "inputs": [
+      { "name": "user", "type": "address" },
+      { "name": "token", "type": "address" }
+    ],
+    "outputs": [{ "name": "", "type": "bool" }]
+  },
+
+  { "type": "function", "name": "claim", "stateMutability": "nonpayable",
+    "inputs": [{ "name": "token", "type": "address" }],
+    "outputs": []
+  },
+
+  { "type": "function", "name": "claimTPI", "stateMutability": "nonpayable", "inputs": [], "outputs": [] },
+  { "type": "function", "name": "claimTXI", "stateMutability": "nonpayable", "inputs": [], "outputs": [] },
+
+  { "type": "function", "name": "setAdmin", "stateMutability": "nonpayable",
+    "inputs": [{ "name": "newAdmin", "type": "address" }],
+    "outputs": []
+  },
+
+  { "type": "function", "name": "rescue", "stateMutability": "nonpayable",
+    "inputs": [
+      { "name": "token", "type": "address" },
+      { "name": "to", "type": "address" },
+      { "name": "amount", "type": "uint256" }
+    ],
+    "outputs": []
+  }
 ]

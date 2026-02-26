@@ -11,6 +11,7 @@
     "inputs": [{ "name": "amountA", "type": "uint256" }, { "name": "amountB", "type": "uint256" }],
     "outputs": [{ "name": "sharesMinted", "type": "uint256" }]
   },
+
   { "type": "function", "name": "removeLiquidity", "stateMutability": "nonpayable",
     "inputs": [{ "name": "sharesBurned", "type": "uint256" }],
     "outputs": [{ "name": "amountA", "type": "uint256" }, { "name": "amountB", "type": "uint256" }]
@@ -20,6 +21,7 @@
     "inputs": [{ "name": "amountIn", "type": "uint256" }, { "name": "aToB", "type": "bool" }],
     "outputs": [{ "name": "out", "type": "uint256" }]
   },
+
   { "type": "function", "name": "swap", "stateMutability": "nonpayable",
     "inputs": [{ "name": "amountIn", "type": "uint256" }, { "name": "minOut", "type": "uint256" }, { "name": "aToB", "type": "bool" }],
     "outputs": [{ "name": "out", "type": "uint256" }]
@@ -33,6 +35,7 @@
       { "name": "sharesMinted", "type": "uint256", "indexed": false }
     ]
   },
+
   { "type": "event", "name": "LiquidityRemoved", "anonymous": false,
     "inputs": [
       { "name": "provider", "type": "address", "indexed": true },
@@ -41,6 +44,7 @@
       { "name": "sharesBurned", "type": "uint256", "indexed": false }
     ]
   },
+
   { "type": "event", "name": "Swapped", "anonymous": false,
     "inputs": [
       { "name": "trader", "type": "address", "indexed": true },

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TempoSwap</title>
+  <title>TipiSwap</title>
   <link rel="stylesheet" href="/style.css" />
 </head>
 
@@ -11,14 +11,14 @@
   <!-- Top bar -->
   <header class="topbar">
     <div class="brand">
-      <img id="brandLogo" class="brand__logo" src="/assets/logo.png" alt="TempoSwap" />
-      <div class="brand__name">TempoSwap</div>
+      <img id="brandLogo" class="brand__logo" src="/assets/logo.png" alt="TipiSwap" />
+      <div class="brand__name">TipiSwap</div>
     </div>
 
     <div class="topbar__right">
-      <div class="pill" id="pillNetwork" title="Tempo Moderato">
+      <div class="pill" id="pillNetwork" title="IoTeX Testnet">
         <span class="dot" id="netDot"></span>
-        <span id="networkName">Tempo Moderato</span>
+        <span id="networkName">IoTeX Testnet</span>
         <span class="chev">▼</span>
       </div>
 
@@ -35,11 +35,11 @@
     <section class="card">
       <div class="card__head">
         <div>
-          <div class="card__title">TempoSwap</div>
+          <div class="card__title">TipiSwap</div>
           <div class="card__sub">
             <span id="walletStatus">Not connected</span>
             <span class="sep">•</span>
-            <span id="balancesLine">USDC: 0 | USDT: 0 | BICI: 0 | HOUSE: 0</span>
+            <span id="balancesLine">TPI: 0 | TXI: 0</span>
           </div>
         </div>
 
@@ -59,12 +59,9 @@
           <div class="label">From</div>
           <div class="inputRow">
             <input id="fromAmount" class="input" placeholder="0.0" inputmode="decimal" />
-            <!-- IMPORTANT: value keeps onchain token keys -->
             <select id="fromTokenSel" class="select tokenSelect">
-              <option value="PATHUSD" selected>USDC</option>
-              <option value="ALPHAUSD">USDT</option>
-              <option value="BETAUSD">BICI</option>
-              <option value="THETAUSD">HOUSE</option>
+              <option value="TPI" selected>TPI</option>
+              <option value="TXI">TXI</option>
             </select>
           </div>
           <div class="hint">Balance: <span id="fromBal">0</span></div>
@@ -78,12 +75,9 @@
           <div class="label">To (estimated)</div>
           <div class="inputRow">
             <input id="toAmount" class="input" placeholder="0.0" disabled />
-            <!-- IMPORTANT: value keeps onchain token keys -->
             <select id="toTokenSel" class="select tokenSelect">
-              <option value="ALPHAUSD" selected>USDT</option>
-              <option value="BETAUSD">BICI</option>
-              <option value="THETAUSD">HOUSE</option>
-              <option value="PATHUSD">USDC</option>
+              <option value="TXI" selected>TXI</option>
+              <option value="TPI">TPI</option>
             </select>
           </div>
           <div class="hint">Balance: <span id="toBal">0</span></div>
@@ -112,7 +106,7 @@
         <div id="swapMsg" class="msg"></div>
 
         <div class="small muted" style="margin-top:10px;">
-          Note: Only USDC ↔ (USDT/BICI/HOUSE) is supported.
+          Note: Only TPI ↔ TXI is supported.
         </div>
       </div>
 
@@ -124,9 +118,7 @@
         <div class="field">
           <div class="label">Pool</div>
           <select id="liqPoolSel" class="select">
-            <option value="PATH_ALPHA" selected>USDC / USDT</option>
-            <option value="PATH_BETA">USDC / BICI</option>
-            <option value="PATH_THETA">USDC / HOUSE</option>
+            <option value="TPI_TXI" selected>TPI / TXI</option>
           </select>
         </div>
 
@@ -139,7 +131,7 @@
           <div class="label" id="liqALabel">Token A amount</div>
           <div class="inputRow">
             <input id="liqAAmount" class="input" placeholder="0.0" inputmode="decimal" />
-            <span class="tokenTag" id="liqATag">USDC</span>
+            <span class="tokenTag" id="liqATag">TPI</span>
           </div>
           <div class="hint">Balance: <span id="liqABal">0</span></div>
         </div>
@@ -148,7 +140,7 @@
           <div class="label" id="liqBLabel">Token B amount</div>
           <div class="inputRow">
             <input id="liqBAmount" class="input" placeholder="0.0" inputmode="decimal" />
-            <span class="tokenTag" id="liqBTag">USDT</span>
+            <span class="tokenTag" id="liqBTag">TXI</span>
           </div>
           <div class="hint">Balance: <span id="liqBBal">0</span></div>
         </div>
@@ -177,16 +169,14 @@
         <div class="small muted">Claim 100 tokens per click (cooldown per token).</div>
 
         <div class="faucetBtns" style="display:flex; gap:10px; flex-wrap:wrap;">
-          <button id="btnClaimPATH" class="btn btn-primary" type="button">Claim 100 USDC</button>
-          <button id="btnClaimALPHA" class="btn btn-primary" type="button">Claim 100 USDT</button>
-          <button id="btnClaimBETA" class="btn btn-primary" type="button">Claim 100 BICI</button>
-          <button id="btnClaimTHETA" class="btn btn-primary" type="button">Claim 100 HOUSE</button>
+          <button id="btnClaimTPI" class="btn btn-primary" type="button">Claim 100 TPI</button>
+          <button id="btnClaimTXI" class="btn btn-primary" type="button">Claim 100 TXI</button>
         </div>
 
         <div id="faucetMsg" class="msg"></div>
 
         <div class="small muted" style="margin-top:10px;">
-          On Tempo, remember to set your fee token (e.g., USDT) in wallet settings.
+          On IoTeX Testnet, gas is paid in IOTX.
         </div>
       </div>
     </section>
