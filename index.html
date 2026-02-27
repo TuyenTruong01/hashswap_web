@@ -2,184 +2,198 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TipiSwap</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>HashSwap</title>
   <link rel="stylesheet" href="/style.css" />
 </head>
-
 <body>
   <!-- Top bar -->
   <header class="topbar">
     <div class="brand">
-      <img id="brandLogo" class="brand__logo" src="/assets/logo.png" alt="TipiSwap" />
-      <div class="brand__name">TipiSwap</div>
+      <img class="brand__logo" src="/assets/logo.png" alt="HashSwap" />
+      <div>
+        <div class="brand__name">HashSwap</div>
+        <div class="brand__sub" id="networkName">Hedera Testnet</div>
+      </div>
     </div>
 
     <div class="topbar__right">
-      <div class="pill" id="pillNetwork" title="IoTeX Testnet">
-        <span class="dot" id="netDot"></span>
-        <span id="networkName">IoTeX Testnet</span>
-        <span class="chev">▼</span>
+      <div class="pill pill--soft">
+        <span class="pill__label">Sign</span>
+        <label class="switch">
+          <input id="signModeToggle" type="checkbox" />
+          <span class="slider"></span>
+        </label>
+        <span id="signModeLabel" class="pill__value">Backend</span>
       </div>
 
-      <button id="btnConnectTop" class="btn btn-primary" type="button">Connect Wallet</button>
-      <button id="btnDisconnect" class="btn btn-ghost btn-sm" type="button" style="display:none;">Disconnect</button>
+      <button id="btnConnectTop" class="btn btn-primary">Connect</button>
+      <button id="btnDisconnect" class="btn btn-ghost" style="display:none;">Disconnect</button>
     </div>
   </header>
 
-  <!-- Background -->
-  <div class="bg"></div>
-
-  <!-- Main card -->
   <main class="wrap">
-    <section class="card">
+    <div class="card">
       <div class="card__head">
-        <div>
-          <div class="card__title">TipiSwap</div>
-          <div class="card__sub">
-            <span id="walletStatus">Not connected</span>
-            <span class="sep">•</span>
-            <span id="balancesLine">TPI: 0 | TXI: 0</span>
-          </div>
+        <div class="card__headLeft">
+          <div class="kpiTitle">Wallet</div>
+          <div id="walletStatus" class="kpiValue">Not connected</div>
         </div>
 
-        <button id="btnReset" class="btn btn-ghost" type="button">Reset</button>
+        <div class="card__headRight">
+          <div class="kpiTitle">Balances</div>
+          <div id="balancesLine" class="kpiValue">hUSD: 0 | hEUR: 0 | hVND: 0</div>
+        </div>
       </div>
 
-      <!-- Tabs -->
       <div class="tabs">
-        <button id="tabSwap" class="tab tab--active" type="button">Swap</button>
-        <button id="tabLiquidity" class="tab" type="button">Liquidity</button>
-        <button id="tabFaucet" class="tab" type="button">Faucet</button>
+        <button id="tabSwap" class="tab tab--active">Swap</button>
+        <button id="tabLiquidity" class="tab">Liquidity</button>
+        <button id="tabFaucet" class="tab">Faucet</button>
+
+        <div class="tabs__spacer"></div>
+        <button id="btnReset" class="btn btn-ghost btn-sm">Reset</button>
       </div>
 
-      <!-- Swap panel -->
-      <div id="panelSwap" class="panel">
-        <div class="field">
-          <div class="label">From</div>
-          <div class="inputRow">
-            <input id="fromAmount" class="input" placeholder="0.0" inputmode="decimal" />
-            <select id="fromTokenSel" class="select tokenSelect">
-              <option value="TPI" selected>TPI</option>
-              <option value="TXI">TXI</option>
-            </select>
+      <!-- Swap -->
+      <section id="panelSwap" class="panel">
+        <h2 class="panel__title">Swap</h2>
+
+        <div class="panel__subline">
+          <div>Pool: <span id="swapPoolLine">—</span></div>
+          <div id="rateLine">—</div>
+        </div>
+
+        <div class="box">
+          <div class="rowHead">
+            <div class="label">From</div>
+            <div class="hint">Balance: <span id="fromBal">0</span></div>
           </div>
-          <div class="hint">Balance: <span id="fromBal">0</span></div>
-        </div>
 
-        <div class="swapMid">
-          <button id="btnFlip" class="iconBtn" title="Flip" type="button">↕</button>
-        </div>
+          <div class="inputRow">
+            <input id="fromAmount" class="input" placeholder="0.0" />
+            <select id="fromTokenSel" class="select"></select>
+          </div>
 
-        <div class="field">
-          <div class="label">To (estimated)</div>
+          <div class="midRow">
+            <button id="btnFlip" class="btn btn-ghost btn-circle" title="Flip">↑↓</button>
+            <div class="midRight">
+              <div class="label">Slippage</div>
+              <select id="slippageSel" class="select select--small">
+                <option value="50" selected>0.50%</option>
+                <option value="100">1.00%</option>
+                <option value="200">2.00%</option>
+                <option value="500">5.00%</option>
+                <option value="auto">Auto</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="rowHead">
+            <div class="label">To (estimate)</div>
+            <div class="hint">Balance: <span id="toBal">0</span></div>
+          </div>
+
           <div class="inputRow">
             <input id="toAmount" class="input" placeholder="0.0" disabled />
-            <select id="toTokenSel" class="select tokenSelect">
-              <option value="TXI" selected>TXI</option>
-              <option value="TPI">TPI</option>
-            </select>
+            <select id="toTokenSel" class="select"></select>
           </div>
-          <div class="hint">Balance: <span id="toBal">0</span></div>
-        </div>
 
-        <div class="row2">
-          <div class="small">Pool: <span id="swapPoolLine">—</span></div>
+          <button id="btnSwap" class="btn btn-primary btn-big">Swap</button>
 
-          <div class="slip">
-            <span class="small">Slippage</span>
-            <select id="slippageSel" class="select">
-              <option value="auto">Auto: 0.50%</option>
-              <option value="0.1">0.10%</option>
-              <option value="0.5" selected>0.50%</option>
-              <option value="1">1.00%</option>
-              <option value="2">2.00%</option>
-            </select>
+          <div id="swapMsg" class="msg"></div>
+
+          <div class="note">
+            Swap supports <b>Backend-sign</b> (operator demo) and <b>Wallet-sign</b>.
+            Toggle “Sign” on the top-right.
           </div>
         </div>
+      </section>
 
-        <div class="row2" style="margin-top:8px;">
-          <div class="small">Rate: <span id="rateLine">—</span></div>
-        </div>
+      <!-- Liquidity -->
+      <section id="panelLiquidity" class="panel hidden">
+        <h2 class="panel__title">Liquidity</h2>
 
-        <button id="btnSwap" class="btn btn-primary btn-big" type="button">Swap</button>
-        <div id="swapMsg" class="msg"></div>
-
-        <div class="small muted" style="margin-top:10px;">
-          Note: Only TPI ↔ TXI is supported.
-        </div>
-      </div>
-
-      <!-- Liquidity panel -->
-      <div id="panelLiquidity" class="panel hidden">
-        <div class="faucetTitle">Liquidity</div>
-        <div class="small muted">Select a pool, add/remove liquidity. Ratio auto-fills.</div>
-
-        <div class="field">
-          <div class="label">Pool</div>
-          <select id="liqPoolSel" class="select">
-            <option value="TPI_TXI" selected>TPI / TXI</option>
-          </select>
-        </div>
-
-        <div class="row2">
-          <div class="small">Pool ratio: <span id="liqRatio">—</span></div>
-          <div class="small">Your LP shares: <span id="lpSharesLine">—</span></div>
-        </div>
-
-        <div class="field" style="margin-top:10px;">
-          <div class="label" id="liqALabel">Token A amount</div>
-          <div class="inputRow">
-            <input id="liqAAmount" class="input" placeholder="0.0" inputmode="decimal" />
-            <span class="tokenTag" id="liqATag">TPI</span>
+        <div class="box">
+          <div class="note">
+            Liquidity uses <b>wallet-sign</b> (other wallets can add/remove).
+            UI shows your total deposited amounts (not share).
           </div>
-          <div class="hint">Balance: <span id="liqABal">0</span></div>
-        </div>
 
-        <div class="field">
-          <div class="label" id="liqBLabel">Token B amount</div>
-          <div class="inputRow">
-            <input id="liqBAmount" class="input" placeholder="0.0" inputmode="decimal" />
-            <span class="tokenTag" id="liqBTag">TXI</span>
+          <div class="grid2">
+            <div class="field">
+              <div class="label">Add: Amount tokenA</div>
+              <div class="inputRow">
+                <input id="liqAmountA" class="input" placeholder="0.0" />
+                <div class="tag" id="liqTokenA">tokenA</div>
+              </div>
+            </div>
+
+            <div class="field">
+              <div class="label">Required tokenB (auto)</div>
+              <div class="inputRow">
+                <input id="liqAmountB" class="input" placeholder="0.0" disabled />
+                <div class="tag" id="liqTokenB">tokenB</div>
+              </div>
+            </div>
           </div>
-          <div class="hint">Balance: <span id="liqBBal">0</span></div>
-        </div>
 
-        <div class="small" id="liqPreview" style="margin-top:6px;">You will add: —</div>
+          <button id="btnAddLiquidity" class="btn btn-primary btn-big">Add Liquidity</button>
 
-        <button id="btnAddLiquidity" class="btn btn-primary btn-big" type="button">Add Liquidity</button>
+          <div class="sep"></div>
 
-        <div class="field" style="margin-top:12px;">
-          <div class="label">Remove (by LP shares)</div>
-          <div class="inputRow">
-            <input id="liqRemoveShares" class="input" placeholder="0.0" inputmode="decimal" />
-            <span class="tokenTag">SHARES</span>
+          <div class="field">
+            <div class="label">Remove percent (1..100)</div>
+            <div class="inputRow">
+              <input id="liqRemovePct" class="input" placeholder="25" />
+              <div class="tag">%</div>
+            </div>
           </div>
-          <div class="hint">Tip: use max shares from “Your LP shares”.</div>
+
+          <button id="btnRemoveLiquidity" class="btn btn-ghost btn-big">Remove Liquidity</button>
+
+          <div class="sep"></div>
+
+          <div class="posBox">
+            <div class="posLine">
+              <span>Your deposited:</span>
+              <span id="liqPosLine">—</span>
+            </div>
+            <div class="posLine">
+              <span>Estimate remove all:</span>
+              <span id="liqEstLine">—</span>
+            </div>
+          </div>
+
+          <div id="liqMsg" class="msg"></div>
         </div>
+      </section>
 
-        <button id="btnRemoveLiquidity" class="btn btn-ghost btn-big" type="button">Remove Liquidity</button>
+      <!-- Faucet -->
+      <section id="panelFaucet" class="panel hidden">
+        <h2 class="panel__title">Faucet</h2>
 
-        <div id="liqMsg" class="msg"></div>
-      </div>
+        <div class="box">
+          <div class="label">Account ID</div>
+          <input id="faucetAccountId" class="input" placeholder="0.0.x" />
 
-      <!-- Faucet panel -->
-      <div id="panelFaucet" class="panel hidden">
-        <div class="faucetTitle">Faucet</div>
-        <div class="small muted">Claim 100 tokens per click (cooldown per token).</div>
+          <div class="btnRow">
+            <button id="btnFaucetCheck" class="btn btn-ghost">Check</button>
+            <button id="btnFaucetClaim" class="btn btn-primary">Claim (20 each / 24h)</button>
+          </div>
 
-        <div class="faucetBtns" style="display:flex; gap:10px; flex-wrap:wrap;">
-          <button id="btnClaimTPI" class="btn btn-primary" type="button">Claim 100 TPI</button>
-          <button id="btnClaimTXI" class="btn btn-primary" type="button">Claim 100 TXI</button>
+          <div id="faucetMsg" class="msg"></div>
+
+          <div class="note">
+            Tip: please associate tokens in HashPack first if needed.
+          </div>
         </div>
+      </section>
 
-        <div id="faucetMsg" class="msg"></div>
-
-        <div class="small muted" style="margin-top:10px;">
-          On IoTeX Testnet, gas is paid in IOTX.
-        </div>
-      </div>
-    </section>
+      <footer class="footer">
+        <div>HashSwap – Stable Liquidity Infrastructure on Hedera</div>
+      </footer>
+    </div>
   </main>
 
   <script src="/config.js"></script>

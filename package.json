@@ -9,6 +9,10 @@
     "preview": "vite preview --port 5173 --host"
   },
   "dependencies": {
+    "@hashgraph/hedera-wallet-connect": "^2.0.6",
+    "@hashgraph/sdk": "^2.80.0",
+    "@hiero-ledger/sdk": "^2.79.0",
+    "@walletconnect/modal": "^2.7.0",
     "ethers": "^6.10.0"
   },
   "devDependencies": {

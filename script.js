@@ -1,901 +1,736 @@
 // script.js (Vite module)
-import { ethers } from "ethers";
+import { DAppConnector } from "@hashgraph/hedera-wallet-connect";
+import { LedgerId } from "@hiero-ledger/sdk";
+import { Transaction } from "@hashgraph/sdk";
 
-(function () {
-  const CFG = window.APP_CONFIG;
-  if (!CFG) {
-    alert("Missing APP_CONFIG. Check /public/config.js loaded before script.js");
+/**
+ * =========================
+ * DOM helpers
+ * =========================
+ */
+const $ = (sel) => document.querySelector(sel);
+
+const el = {
+  // top
+  btnConnect: $("#btnConnectTop"),
+  btnDisconnect: $("#btnDisconnect"),
+  networkName: $("#networkName"),
+
+  // sign toggle
+  signModeToggle: $("#signModeToggle"),
+  signModeLabel: $("#signModeLabel"),
+
+  // header status
+  walletStatus: $("#walletStatus"),
+  balancesLine: $("#balancesLine"),
+
+  // swap
+  fromAmount: $("#fromAmount"),
+  toAmount: $("#toAmount"),
+  fromSel: $("#fromTokenSel"),
+  toSel: $("#toTokenSel"),
+  fromBal: $("#fromBal"),
+  toBal: $("#toBal"),
+  poolLine: $("#swapPoolLine"),
+  rateLine: $("#rateLine"),
+  slippageSel: $("#slippageSel"),
+  btnSwap: $("#btnSwap"),
+  btnFlip: $("#btnFlip"),
+  swapMsg: $("#swapMsg"),
+
+  // tabs/panels
+  tabSwap: $("#tabSwap"),
+  tabLiquidity: $("#tabLiquidity"),
+  tabFaucet: $("#tabFaucet"),
+  panelSwap: $("#panelSwap"),
+  panelLiquidity: $("#panelLiquidity"),
+  panelFaucet: $("#panelFaucet"),
+  btnReset: $("#btnReset"),
+
+  // liquidity
+  liqAmountA: $("#liqAmountA"),
+  liqAmountB: $("#liqAmountB"),
+  liqTokenA: $("#liqTokenA"),
+  liqTokenB: $("#liqTokenB"),
+  liqRemovePct: $("#liqRemovePct"),
+  btnAddLiquidity: $("#btnAddLiquidity"),
+  btnRemoveLiquidity: $("#btnRemoveLiquidity"),
+  liqPosLine: $("#liqPosLine"),
+  liqEstLine: $("#liqEstLine"),
+  liqMsg: $("#liqMsg"),
+
+  // faucet
+  faucetAccountId: $("#faucetAccountId"),
+  btnFaucetCheck: $("#btnFaucetCheck"),
+  btnFaucetClaim: $("#btnFaucetClaim"),
+  faucetMsg: $("#faucetMsg"),
+};
+
+function getConfig() {
+  const cfg = window.APP_CONFIG;
+  if (!cfg) throw new Error("Missing APP_CONFIG. Check /public/config.js loaded before script.js");
+  return cfg;
+}
+
+function fmt(num, digits = 6) {
+  if (num === null || num === undefined) return "0";
+  const n = Number(num);
+  if (!Number.isFinite(n)) return "0";
+  return n.toFixed(digits).replace(/\.?0+$/, "");
+}
+
+function setMsg(node, text, ok = true) {
+  if (!node) return;
+  node.textContent = text || "";
+  node.style.color = ok ? "rgba(0,0,0,.70)" : "#b91c1c";
+}
+
+/**
+ * =========================
+ * base64 helpers (browser)
+ * =========================
+ */
+function base64ToBytes(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+function bytesToBase64(bytes) {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+
+/**
+ * =========================
+ * Global app state
+ * =========================
+ */
+let state = null; // from /api/state
+let connectedAccountId = null; // "0.0.x"
+let dAppConnector = null;
+
+let lastQuote = null;
+
+/**
+ * =========================
+ * Tabs
+ * =========================
+ */
+function showPanel(name) {
+  el.panelSwap.classList.toggle("hidden", name !== "swap");
+  el.panelLiquidity.classList.toggle("hidden", name !== "liq");
+  el.panelFaucet.classList.toggle("hidden", name !== "faucet");
+
+  el.tabSwap.classList.toggle("tab--active", name === "swap");
+  el.tabLiquidity.classList.toggle("tab--active", name === "liq");
+  el.tabFaucet.classList.toggle("tab--active", name === "faucet");
+}
+
+/**
+ * =========================
+ * Backend API
+ * =========================
+ */
+async function apiGet(path) {
+  const { apiBase } = getConfig();
+  const r = await fetch(`${apiBase}${path}`);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j?.ok === false) throw new Error(j?.error || `API ${path} failed: ${r.status}`);
+  return j;
+}
+
+async function apiPost(path, body) {
+  const { apiBase } = getConfig();
+  const r = await fetch(`${apiBase}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j?.ok === false) {
+    throw new Error(j?.error || j?.message || `API ${path} failed: ${r.status}`);
+  }
+  return j;
+}
+
+/**
+ * =========================
+ * Mirror balance fetch
+ * =========================
+ */
+async function fetchBalancesFromMirror(accountId) {
+  if (!accountId || !state?.mirror) return {};
+
+  const url = `${state.mirror}/api/v1/accounts/${accountId}/tokens?limit=100`;
+  const r = await fetch(url);
+  if (!r.ok) return {};
+
+  const j = await r.json();
+  const rows = j?.tokens || [];
+  const byTokenId = new Map();
+  for (const t of rows) byTokenId.set(t.token_id, t.balance);
+
+  const out = {};
+  for (const t of state.tokens || []) {
+    const units = byTokenId.get(t.tokenId) ?? 0;
+    const dec = Number(t.decimals ?? state.decimals ?? 6);
+    out[t.symbol] = Number(units) / Math.pow(10, dec);
+  }
+  return out;
+}
+
+async function refreshBalances() {
+  if (!connectedAccountId || !state) {
+    el.balancesLine.textContent = "hUSD: 0 | hEUR: 0 | hVND: 0";
+    el.fromBal.textContent = "0";
+    el.toBal.textContent = "0";
     return;
   }
 
-  // ===== Label helpers (ONLY UI) =====
-  const LABELS = CFG.labels || {};
-  const labelOf = (sym) => LABELS[sym] || sym;
-  const poolLabelOf = (poolKey) => LABELS[poolKey] || poolKey;
+  const bals = await fetchBalancesFromMirror(connectedAccountId);
 
-  // ===== DOM =====
-  const networkNameEl = document.getElementById("networkName");
-  const btnConnectTop = document.getElementById("btnConnectTop");
-  const btnDisconnect = document.getElementById("btnDisconnect");
-  const btnReset = document.getElementById("btnReset");
+  el.balancesLine.textContent =
+    `hUSD: ${fmt(bals.hUSD || 0, 6)} | ` +
+    `hEUR: ${fmt(bals.hEUR || 0, 6)} | ` +
+    `hVND: ${fmt(bals.hVND || 0, 6)}`;
 
-  const walletStatusEl = document.getElementById("walletStatus");
-  const balancesLineEl = document.getElementById("balancesLine");
+  const fromSym = el.fromSel.value;
+  const toSym = el.toSel.value;
 
-  const tabSwap = document.getElementById("tabSwap");
-  const tabLiquidity = document.getElementById("tabLiquidity");
-  const tabFaucet = document.getElementById("tabFaucet");
+  el.fromBal.textContent = fmt(bals[fromSym] || 0, 6);
+  el.toBal.textContent = fmt(bals[toSym] || 0, 6);
+}
 
-  const panelSwap = document.getElementById("panelSwap");
-  const panelLiquidity = document.getElementById("panelLiquidity");
-  const panelFaucet = document.getElementById("panelFaucet");
+/**
+ * =========================
+ * UI init from /api/state
+ * =========================
+ */
+function fillTokenSelects() {
+  const tokens = state?.tokens || [];
+  el.fromSel.innerHTML = "";
+  el.toSel.innerHTML = "";
 
-  // Swap DOM
-  const fromAmountEl = document.getElementById("fromAmount");
-  const toAmountEl = document.getElementById("toAmount");
-  const fromBalEl = document.getElementById("fromBal");
-  const toBalEl = document.getElementById("toBal");
-  const rateLineEl = document.getElementById("rateLine");
-  const swapPoolLineEl = document.getElementById("swapPoolLine");
-  const slippageSel = document.getElementById("slippageSel");
-  const btnFlip = document.getElementById("btnFlip");
-  const btnSwap = document.getElementById("btnSwap");
-  const swapMsg = document.getElementById("swapMsg");
-  const fromTokenSel = document.getElementById("fromTokenSel");
-  const toTokenSel = document.getElementById("toTokenSel");
+  for (const t of tokens) {
+    const o1 = document.createElement("option");
+    o1.value = t.symbol;
+    o1.textContent = t.symbol;
+    el.fromSel.appendChild(o1);
 
-  // Faucet DOM
-  const btnClaimTPI = document.getElementById("btnClaimTPI");
-  const btnClaimTXI = document.getElementById("btnClaimTXI");
-  const faucetMsg = document.getElementById("faucetMsg");
-
-  // Liquidity DOM
-  const liqPoolSel = document.getElementById("liqPoolSel");
-  const liqRatioEl = document.getElementById("liqRatio");
-  const lpSharesLineEl = document.getElementById("lpSharesLine");
-  const liqAAmountEl = document.getElementById("liqAAmount");
-  const liqBAmountEl = document.getElementById("liqBAmount");
-  const liqABalEl = document.getElementById("liqABal");
-  const liqBBalEl = document.getElementById("liqBBal");
-  const liqATagEl = document.getElementById("liqATag");
-  const liqBTagEl = document.getElementById("liqBTag");
-  const liqALabelEl = document.getElementById("liqALabel");
-  const liqBLabelEl = document.getElementById("liqBLabel");
-  const liqPreviewEl = document.getElementById("liqPreview");
-  const btnAddLiquidity = document.getElementById("btnAddLiquidity");
-  const liqRemoveSharesEl = document.getElementById("liqRemoveShares");
-  const btnRemoveLiquidity = document.getElementById("btnRemoveLiquidity");
-  const liqMsg = document.getElementById("liqMsg");
-
-  // ===== State =====
-  let provider = null;
-  let signer = null;
-  let account = null;
-
-  let erc20Abi = null;
-  let faucetAbi = null;
-  let ammAbi = null;
-
-  const TOKENS = CFG.contracts.TOKENS;
-  const POOLS = CFG.contracts.POOLS;
-
-  const tokenCtrs = {}; // symbol -> Contract
-  const tokenDec = {};  // symbol -> number
-
-  let faucet = null;
-
-  let activePoolKey = "TPI_TXI";
-  let amm = null;
-
-  let fromToken = CFG.ui.defaultFrom || "TPI";
-  let toToken = CFG.ui.defaultTo || "TXI";
-
-  let liqLastEdited = "A";
-  let liqIsSyncing = false;
-
-  // ===== Helpers =====
-  const setMsg = (el, text) => (el.textContent = text || "");
-  const shortAddr = (a) => (a ? a.slice(0, 6) + "…" + a.slice(-4) : "");
-
-  function trimNum(x) {
-    const n = Number(x);
-    if (!isFinite(n)) return "0";
-    if (n === 0) return "0";
-    if (Math.abs(n) < 0.0001) return n.toExponential(2);
-    return n.toLocaleString(undefined, { maximumFractionDigits: 6 });
+    const o2 = document.createElement("option");
+    o2.value = t.symbol;
+    o2.textContent = t.symbol;
+    el.toSel.appendChild(o2);
   }
 
-  async function fetchJson(path) {
-    const r = await fetch(path, { cache: "no-store" });
-    if (!r.ok) throw new Error(`Fetch failed ${path}: ${r.status}`);
-    return await r.json();
+  const cfg = getConfig();
+  el.fromSel.value = cfg.ui?.defaultFrom || (tokens[0]?.symbol ?? "hUSD");
+  el.toSel.value = cfg.ui?.defaultTo || (tokens[1]?.symbol ?? "hEUR");
+}
+
+function syncWalletStatus() {
+  if (connectedAccountId) {
+    el.walletStatus.textContent = `Connected: ${connectedAccountId}`;
+    el.btnDisconnect.style.display = "inline-flex";
+    el.btnConnect.textContent = "Connected";
+  } else {
+    el.walletStatus.textContent = "Not connected";
+    el.btnDisconnect.style.display = "none";
+    el.btnConnect.textContent = "Connect";
+  }
+}
+
+/**
+ * =========================
+ * Sign toggle
+ * =========================
+ */
+function isWalletSignEnabled() {
+  return !!el.signModeToggle?.checked;
+}
+
+function syncSignLabel() {
+  if (!el.signModeLabel) return;
+  el.signModeLabel.textContent = isWalletSignEnabled() ? "Wallet" : "Backend";
+}
+
+/**
+ * =========================
+ * Quote + Rate
+ * =========================
+ */
+let quoteTimer = null;
+
+function getSlippageBps() {
+  const v = el.slippageSel.value;
+  if (v === "auto") return 50;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 50;
+}
+
+async function doQuote() {
+  if (!state) return;
+
+  const amount = String(el.fromAmount.value || "").trim();
+  const from = el.fromSel.value;
+  const to = el.toSel.value;
+
+  el.rateLine.textContent = "—";
+
+  const n = Number(amount);
+  if (!Number.isFinite(n) || n <= 0) {
+    el.toAmount.value = "";
+    lastQuote = null;
+    return;
   }
 
-  async function ensureChain() {
-    const eth = window.ethereum;
-    if (!eth) throw new Error("No injected wallet found (window.ethereum missing).");
+  try {
+    const slippageBps = getSlippageBps();
+    const q = await apiGet(`/api/quote?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&amount=${encodeURIComponent(n)}&slippageBps=${slippageBps}`);
 
-    const target = String(CFG.chain.chainIdHex || "").toLowerCase();
-    if (!target) throw new Error("Missing CFG.chain.chainIdHex in public/config.js");
+    lastQuote = q;
+    el.toAmount.value = fmt(q.amountOutTokens, 6);
 
-    const cur = String(await eth.request({ method: "eth_chainId" })).toLowerCase();
-    if (cur === target) return;
+    const rate = q.amountOutTokens / q.amountInTokens;
+    el.rateLine.textContent = `1 ${from} ≈ ${fmt(rate, 6)} ${to}`;
+    el.poolLine.textContent = q.poolId || state.pool?.id || "—";
+  } catch (e) {
+    lastQuote = null;
+    el.toAmount.value = "";
+    setMsg(el.swapMsg, `Quote error: ${e.message}`, false);
+  }
+}
 
-    try {
-      await eth.request({
-        method: "wallet_switchEthereumChain",
-        params: [{ chainId: CFG.chain.chainIdHex }]
+function scheduleQuote() {
+  clearTimeout(quoteTimer);
+  quoteTimer = setTimeout(doQuote, 200);
+}
+
+/**
+ * =========================
+ * Wallet connect
+ * =========================
+ */
+function makeMetadata() {
+  const cfg = getConfig();
+  return {
+    name: cfg.appName || "HashSwap",
+    description: "HashSwap demo: backend builds tx, wallet can sign and submit via backend",
+    url: window.location.origin,
+    icons: [`${window.location.origin}/assets/logo.png`],
+  };
+}
+
+async function initWalletIfPossible() {
+  const cfg = getConfig();
+  if (!cfg.wcProjectId) return null;
+
+  dAppConnector = new DAppConnector(makeMetadata(), LedgerId.TESTNET, cfg.wcProjectId);
+  await dAppConnector.init({ logger: "error" });
+
+  if (dAppConnector.signers?.length) {
+    connectedAccountId = dAppConnector.signers[dAppConnector.signers.length - 1]
+      .getAccountId()
+      .toString();
+  }
+  return dAppConnector;
+}
+
+function findHashPackExtension(connector, cfg) {
+  const exts = connector?.extensions || [];
+  if (!exts.length) return null;
+
+  if (cfg.wallet?.preferredExtensionId) {
+    return exts.find((e) => e.id === cfg.wallet.preferredExtensionId) || null;
+  }
+  return exts.find((e) => (e.name || "").toLowerCase().includes("hashpack")) || null;
+}
+
+async function connectWallet() {
+  const cfg = getConfig();
+
+  if (!cfg.wcProjectId) {
+    alert("Chưa có wcProjectId → bạn có thể nhập accountId thủ công ở Faucet tab.");
+    showPanel("faucet");
+    el.faucetAccountId.focus();
+    return;
+  }
+
+  if (!dAppConnector) await initWalletIfPossible();
+  if (!dAppConnector) return;
+
+  try {
+    const hashpackExt = findHashPackExtension(dAppConnector, cfg);
+    if (cfg.wallet?.preferExtension && hashpackExt?.available) {
+      await dAppConnector.connectExtension(hashpackExt.id);
+    } else {
+      await dAppConnector.openModal();
+    }
+
+    if (dAppConnector.signers?.length) {
+      connectedAccountId = dAppConnector.signers[dAppConnector.signers.length - 1]
+        .getAccountId()
+        .toString();
+    }
+
+    el.faucetAccountId.value = connectedAccountId || "";
+    syncWalletStatus();
+    await refreshBalances();
+    await doQuote();
+    await refreshLiquidityPosition();
+  } catch {
+    alert("Connect fail / cancelled.");
+  }
+}
+
+async function disconnectAll() {
+  try {
+    if (dAppConnector) await dAppConnector.disconnectAll();
+  } catch {}
+  connectedAccountId = null;
+  syncWalletStatus();
+  await refreshBalances();
+  await refreshLiquidityPosition();
+}
+
+/**
+ * =========================
+ * Wallet sign + submit
+ * =========================
+ */
+async function walletSignAndSubmit(pendingId, txBytesBase64) {
+  if (!dAppConnector?.signers?.length) throw new Error("Wallet not connected");
+  const signer = dAppConnector.signers[dAppConnector.signers.length - 1];
+
+  const txBytes = base64ToBytes(txBytesBase64);
+  const tx = Transaction.fromBytes(txBytes);
+
+  const signedTx = await signer.signTransaction(tx);
+  const signedTxBase64 = bytesToBase64(signedTx.toBytes());
+
+  const out = await apiPost("/api/tx/submit", {
+    pendingId,
+    signedTxBase64,
+  });
+
+  return out;
+}
+
+/**
+ * =========================
+ * Swap
+ * =========================
+ */
+async function doSwap() {
+  try {
+    setMsg(el.swapMsg, "");
+
+    if (!connectedAccountId) {
+      throw new Error("Chưa có accountId. Hãy Connect ví hoặc nhập accountId ở Faucet.");
+    }
+
+    const amount = Number(el.fromAmount.value);
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error("Amount không hợp lệ.");
+
+    const from = el.fromSel.value;
+    const to = el.toSel.value;
+    const slippageBps = getSlippageBps();
+
+    el.btnSwap.disabled = true;
+
+    const walletSignEnabled = isWalletSignEnabled();
+    let txId = "";
+
+    if (walletSignEnabled) {
+      const poolKey = state?.pool?.poolKey || "hUSD-hEUR";
+
+      const build = await apiPost("/api/tx/build/swap", {
+        poolKey,
+        accountId: connectedAccountId,
+        from,
+        to,
+        amount,
+        slippageBps,
       });
-    } catch (e) {
-      if (e?.code === 4902 || String(e?.message || "").toLowerCase().includes("unrecognized")) {
-        await eth.request({
-          method: "wallet_addEthereumChain",
-          params: [{
-            chainId: CFG.chain.chainIdHex,
-            chainName: CFG.chain.chainName,
-            rpcUrls: CFG.chain.rpcUrls,
-            nativeCurrency: CFG.chain.nativeCurrency,
-            blockExplorerUrls: CFG.chain.blockExplorerUrls
-          }]
-        });
-      } else {
-        throw e;
-      }
-    }
-  }
 
-  async function loadAbisOnce() {
-    if (erc20Abi && faucetAbi && ammAbi) return;
-    [erc20Abi, faucetAbi, ammAbi] = await Promise.all([
-      fetchJson(CFG.abi.erc20),
-      fetchJson(CFG.abi.faucet),
-      fetchJson(CFG.abi.amm),
-    ]);
-  }
+      const submitted = await walletSignAndSubmit(build.pendingId, build.txBytesBase64);
+      txId = submitted.txId || "";
 
-  function setConnectedUI(yes) {
-    btnConnectTop.textContent = yes ? "Connected" : "Connect Wallet";
-    if (btnDisconnect) btnDisconnect.style.display = yes ? "inline-flex" : "none";
-  }
+      setMsg(el.swapMsg, `✅ Swap (wallet-sign) OK. Tx: ${txId}`);
+    } else {
+      const res = await apiPost("/api/swap", {
+        accountId: connectedAccountId,
+        from,
+        to,
+        amount,
+        slippageBps,
+      });
 
-  function setTab(which) {
-    const isSwap = which === "swap";
-    const isLiq = which === "liq";
-    const isFaucet = which === "faucet";
-
-    tabSwap.classList.toggle("tab--active", isSwap);
-    tabLiquidity.classList.toggle("tab--active", isLiq);
-    tabFaucet.classList.toggle("tab--active", isFaucet);
-
-    panelSwap.classList.toggle("hidden", !isSwap);
-    panelLiquidity.classList.toggle("hidden", !isLiq);
-    panelFaucet.classList.toggle("hidden", !isFaucet);
-
-    setMsg(swapMsg, "");
-    setMsg(liqMsg, "");
-    setMsg(faucetMsg, "");
-  }
-
-  function resolvePoolForPair(a, b) {
-    if ((a === "TPI" && b === "TXI") || (a === "TXI" && b === "TPI")) return "TPI_TXI";
-    return null;
-  }
-
-  function getPoolAddress(poolKey) {
-    if (poolKey === "TPI_TXI") return POOLS.TPI_TXI;
-    return null;
-  }
-
-  function makeAmm(poolKey) {
-    const addr = getPoolAddress(poolKey);
-    if (!addr) return null;
-    const conn = signer || provider;
-    return new ethers.Contract(addr, ammAbi, conn);
-  }
-
-  function makeContracts() {
-    if (!provider) return;
-
-    const conn = signer || provider;
-
-    // tokens
-    for (const sym of Object.keys(TOKENS)) {
-      tokenCtrs[sym] = new ethers.Contract(TOKENS[sym], erc20Abi, conn);
+      txId = res.txId || res.transactionId || "";
+      setMsg(el.swapMsg, `✅ Swap (backend-sign) OK. Tx: ${txId}`);
     }
 
-    faucet = new ethers.Contract(CFG.contracts.FAUCET, faucetAbi, conn);
-
-    amm = makeAmm(activePoolKey);
-  }
-
-  function getSlippagePct() {
-    const v = slippageSel.value;
-    if (v === "auto") return Number(CFG.ui.slippageDefaultPct || 0.5);
-    return Number(v);
-  }
-
-  function setSwapSelects() {
-    fromTokenSel.value = fromToken;
-    toTokenSel.value = toToken;
-  }
-
-  function setSwapPoolLine() {
-    const paddr = getPoolAddress(activePoolKey);
-    swapPoolLineEl.textContent = paddr
-      ? `${poolLabelOf(activePoolKey)} (${paddr.slice(0, 8)}…${paddr.slice(-4)})`
-      : "—";
-  }
-
-  function enforceSwapPair() {
-    if (fromToken === toToken) {
-      toToken = (fromToken === "TPI") ? "TXI" : "TPI";
-      setSwapSelects();
-    }
-
-    const poolKey = resolvePoolForPair(fromToken, toToken);
-    activePoolKey = poolKey || "TPI_TXI";
-    amm = makeAmm(activePoolKey);
-
-    setSwapPoolLine();
-  }
-
-  async function refreshBalances() {
-    if (!provider || !account) {
-      balancesLineEl.textContent = `${labelOf("TPI")}: 0 | ${labelOf("TXI")}: 0`;
-      fromBalEl.textContent = "0";
-      toBalEl.textContent = "0";
-      liqABalEl.textContent = "0";
-      liqBBalEl.textContent = "0";
-      lpSharesLineEl.textContent = "—";
-      return;
-    }
-
-    try {
-      const syms = ["TPI", "TXI"];
-
-      const bals = await Promise.all(
-        syms.map((s) => tokenCtrs[s].balanceOf(account))
-      );
-
-      const fmt = {};
-      for (let i = 0; i < syms.length; i++) {
-        const s = syms[i];
-        const d = tokenDec[s] ?? 18;
-        fmt[s] = ethers.formatUnits(bals[i], d);
-      }
-
-      balancesLineEl.textContent =
-        `${labelOf("TPI")}: ${trimNum(fmt.TPI)} | ${labelOf("TXI")}: ${trimNum(fmt.TXI)}`;
-
-      fromBalEl.textContent = trimNum(fmt[fromToken] || "0");
-      toBalEl.textContent = trimNum(fmt[toToken] || "0");
-
-      const liqPair = getLiquidityPair();
-      liqABalEl.textContent = trimNum(fmt[liqPair.a] || "0");
-      liqBBalEl.textContent = trimNum(fmt[liqPair.b] || "0");
-
-      const pool = makeAmm(liqPair.poolKey);
-      if (pool) {
-        const [myShares, totalShares] = await Promise.all([
-          pool[CFG.fn.ammSharesOf](account),
-          pool[CFG.fn.ammTotalShares](),
-        ]);
-        lpSharesLineEl.textContent = `${myShares.toString()} / ${totalShares.toString()}`;
-      } else {
-        lpSharesLineEl.textContent = "—";
-      }
-    } catch (_) {}
-  }
-
-  function getLiquidityPair() {
-    return { a: "TPI", b: "TXI", poolKey: "TPI_TXI" };
-  }
-
-  function setLiquidityLabels() {
-    const p = getLiquidityPair();
-    liqALabelEl.textContent = `${labelOf(p.a)} amount`;
-    liqBLabelEl.textContent = `${labelOf(p.b)} amount`;
-    liqATagEl.textContent = labelOf(p.a);
-    liqBTagEl.textContent = labelOf(p.b);
-  }
-
-  async function connect() {
-    setMsg(swapMsg, "");
-    setMsg(liqMsg, "");
-    setMsg(faucetMsg, "");
-
-    const eth = window.ethereum;
-    if (!eth) {
-      setMsg(swapMsg, "No wallet detected. Install MetaMask/Rabby/Bitget (enable ONE at a time).");
-      return;
-    }
-
-    try {
-      await loadAbisOnce();
-      await ensureChain();
-
-      provider = new ethers.BrowserProvider(eth);
-
-      const accs = await eth.request({ method: "eth_requestAccounts" });
-      account = accs?.[0] || null;
-
-      signer = await provider.getSigner();
-      makeContracts();
-
-      // decimals
-      const syms = ["TPI", "TXI"];
-      const decs = await Promise.all(syms.map((s) => tokenCtrs[s].decimals()));
-      for (let i = 0; i < syms.length; i++) tokenDec[syms[i]] = Number(decs[i]);
-
-      networkNameEl.textContent = CFG.chain.chainName;
-      walletStatusEl.textContent = `Connected: ${shortAddr(account)}`;
-      setConnectedUI(true);
-
-      // Faucet button labels
-      if (btnClaimTPI) btnClaimTPI.textContent = `Claim 100 ${labelOf("TPI")}`;
-      if (btnClaimTXI) btnClaimTXI.textContent = `Claim 100 ${labelOf("TXI")}`;
-
-      enforceSwapPair();
-      setLiquidityLabels();
-
-      await refreshBalances();
-      await updateQuote();
-      await syncLiquidityInputs();
-    } catch (e) {
-      console.error(e);
-      const msg = e?.shortMessage || e?.message || String(e);
-      setMsg(swapMsg, `Connect failed: ${msg}`);
-      setConnectedUI(false);
-    }
-  }
-
-  function disconnect() {
-    provider = null;
-    signer = null;
-    account = null;
-
-    for (const k of Object.keys(tokenCtrs)) delete tokenCtrs[k];
-    for (const k of Object.keys(tokenDec)) delete tokenDec[k];
-
-    faucet = null;
-    amm = null;
-
-    walletStatusEl.textContent = "Not connected";
-    balancesLineEl.textContent = `${labelOf("TPI")}: 0 | ${labelOf("TXI")}: 0`;
-    fromBalEl.textContent = "0";
-    toBalEl.textContent = "0";
-    liqABalEl.textContent = "0";
-    liqBBalEl.textContent = "0";
-    lpSharesLineEl.textContent = "—";
-
-    fromAmountEl.value = "";
-    toAmountEl.value = "";
-    rateLineEl.textContent = "—";
-    swapPoolLineEl.textContent = "—";
-
-    liqAAmountEl.value = "";
-    liqBAmountEl.value = "";
-    liqRatioEl.textContent = "—";
-    liqPreviewEl.textContent = "You will add: —";
-    liqRemoveSharesEl.value = "";
-
-    setMsg(swapMsg, "");
-    setMsg(liqMsg, "");
-    setMsg(faucetMsg, "");
-
-    fromToken = CFG.ui.defaultFrom || "TPI";
-    toToken = CFG.ui.defaultTo || "TXI";
-    activePoolKey = "TPI_TXI";
-
-    setConnectedUI(false);
-  }
-
-  async function resetAll() {
-    fromAmountEl.value = "";
-    toAmountEl.value = "";
-    rateLineEl.textContent = "—";
-
-    liqAAmountEl.value = "";
-    liqBAmountEl.value = "";
-    liqRatioEl.textContent = "—";
-    liqPreviewEl.textContent = "You will add: —";
-    liqRemoveSharesEl.value = "";
-
-    setMsg(swapMsg, "");
-    setMsg(liqMsg, "");
-    setMsg(faucetMsg, "");
-
-    fromToken = CFG.ui.defaultFrom || "TPI";
-    toToken = CFG.ui.defaultTo || "TXI";
-    setSwapSelects();
-    enforceSwapPair();
-    setLiquidityLabels();
-
+    await new Promise((r) => setTimeout(r, 1200));
     await refreshBalances();
-    await updateQuote();
-    await syncLiquidityInputs();
+    await doQuote();
+    await refreshLiquidityPosition();
+  } catch (e) {
+    setMsg(el.swapMsg, `❌ Swap failed: ${e.message}`, false);
+  } finally {
+    el.btnSwap.disabled = false;
   }
+}
 
-  // ---------- Swap ----------
-  function getAToBForPool(poolKey, fromSym, toSym) {
-    // tokenA = TPI, tokenB = TXI (deploy AMM(TPI, TXI))
-    return (fromSym === "TPI" && toSym === "TXI");
+/**
+ * =========================
+ * Liquidity UI helpers
+ * =========================
+ */
+function getDefaultPoolKey() {
+  return state?.pool?.poolKey || (state?.pools?.[0]?.poolKey) || "hUSD-hEUR";
+}
+
+async function refreshLiquidityPosition() {
+  try {
+    if (!connectedAccountId || !state) {
+      el.liqPosLine.textContent = "—";
+      el.liqEstLine.textContent = "—";
+      return;
+    }
+
+    const poolKey = getDefaultPoolKey();
+    const j = await apiGet(`/api/liquidity/position?accountId=${encodeURIComponent(connectedAccountId)}&poolKey=${encodeURIComponent(poolKey)}`);
+
+    const symA = state.pool?.tokenA?.symbol || "tokenA";
+    const symB = state.pool?.tokenB?.symbol || "tokenB";
+
+    el.liqPosLine.textContent = `${fmt(j.depositedA, 6)} ${symA} | ${fmt(j.depositedB, 6)} ${symB}`;
+    el.liqEstLine.textContent =
+      `${fmt(j.estimateRemoveAll.amountA, 6)} ${symA} | ${fmt(j.estimateRemoveAll.amountB, 6)} ${symB}`;
+  } catch {
+    // silent
   }
-
-  async function updateQuote() {
-    setMsg(swapMsg, "");
-    toAmountEl.value = "";
-    rateLineEl.textContent = "—";
-
-    if (!provider || !account || !amm) return;
-
-    const raw = (fromAmountEl.value || "").trim();
-    const amt = Number(raw);
-    if (!raw || !isFinite(amt) || amt <= 0) return;
-
-    try {
-      enforceSwapPair();
-
-      const decIn = tokenDec[fromToken] ?? 18;
-      const decOut = tokenDec[toToken] ?? 18;
-
-      const amountIn = ethers.parseUnits(raw, decIn);
-      const aToB = getAToBForPool(activePoolKey, fromToken, toToken);
-
-      const out = await amm[CFG.fn.ammGetAmountOut](amountIn, aToB);
-      const outFmt = ethers.formatUnits(out, decOut);
-
-      toAmountEl.value = outFmt;
-
-      const rate = amt > 0 ? (Number(outFmt) / amt) : 0;
-      rateLineEl.textContent = rate > 0
-        ? `1 ${labelOf(fromToken)} ≈ ${trimNum(rate)} ${labelOf(toToken)}`
-        : "—";
-    } catch (_) {}
-  }
-
-  async function doSwap() {
-    setMsg(swapMsg, "");
-
-    if (!account || !signer) {
-      await connect();
-      return;
-    }
-
-    const raw = (fromAmountEl.value || "").trim();
-    const amt = Number(raw);
-    if (!raw || !isFinite(amt) || amt <= 0) {
-      setMsg(swapMsg, "Enter amount > 0");
-      return;
-    }
-
-    btnSwap.disabled = true;
-
-    try {
-      enforceSwapPair();
-
-      const decIn = tokenDec[fromToken] ?? 18;
-      const tokenIn = tokenCtrs[fromToken];
-      const poolAddr = getPoolAddress(activePoolKey);
-
-      const amountIn = ethers.parseUnits(raw, decIn);
-      const aToB = getAToBForPool(activePoolKey, fromToken, toToken);
-
-      const out = await amm[CFG.fn.ammGetAmountOut](amountIn, aToB);
-
-      const slipPct = getSlippagePct();
-      const bps = BigInt(Math.floor(slipPct * 100));
-      const minOut = out - (out * bps) / 10000n;
-
-      const allowance = await tokenIn.allowance(account, poolAddr);
-      if (allowance < amountIn) {
-        setMsg(swapMsg, `Approving ${labelOf(fromToken)}…`);
-        const txA = await tokenIn.approve(poolAddr, amountIn);
-        await txA.wait();
-      }
-
-      setMsg(swapMsg, "Swapping…");
-      const tx = await amm[CFG.fn.ammSwap](amountIn, minOut, aToB);
-      const rc = await tx.wait();
-
-      setMsg(swapMsg, `✅ Swap success. Tx: ${rc.hash.slice(0, 10)}…`);
-      await refreshBalances();
-      await updateQuote();
-      await syncLiquidityInputs();
-    } catch (e) {
-      console.error(e);
-      const msg = e?.shortMessage || e?.reason || e?.message || String(e);
-      setMsg(swapMsg, `Swap failed: ${msg}`);
-    } finally {
-      btnSwap.disabled = false;
-    }
-  }
-
-  // ---------- Faucet ----------
-  async function canClaimToken(sym) {
-    try {
-      const ok = await faucet[CFG.fn.faucetCanClaim](account, TOKENS[sym]);
-      return Boolean(ok);
-    } catch (_) {
-      return true;
-    }
-  }
-
-  async function doClaim(sym, btn) {
-    setMsg(faucetMsg, "");
-
-    if (!account || !signer) {
-      await connect();
-      return;
-    }
-
-    btn.disabled = true;
-
-    try {
-      const ok = await canClaimToken(sym);
-      if (!ok) {
-        setMsg(faucetMsg, `Cooldown active for ${labelOf(sym)}. Try later.`);
-        return;
-      }
-
-      const fnMap = {
-        TPI: CFG.fn.faucetClaimTPI,
-        TXI: CFG.fn.faucetClaimTXI
-      };
-
-      const fn = fnMap[sym];
-      if (!fn || typeof faucet[fn] !== "function") {
-        // fallback to claim(address token)
-        setMsg(faucetMsg, `Claiming ${labelOf(sym)}…`);
-        const tx0 = await faucet.claim(TOKENS[sym], { gasLimit: 250000n });
-        const rc0 = await tx0.wait();
-        setMsg(faucetMsg, `✅ Claim ${labelOf(sym)} success. Tx: ${rc0.hash.slice(0, 10)}…`);
-      } else {
-        setMsg(faucetMsg, `Claiming 100 ${labelOf(sym)}…`);
-        const tx = await faucet[fn]({ gasLimit: 250000n });
-        const rc = await tx.wait();
-        setMsg(faucetMsg, `✅ Claim ${labelOf(sym)} success. Tx: ${rc.hash.slice(0, 10)}…`);
-      }
-
-      await refreshBalances();
-      await updateQuote();
-      await syncLiquidityInputs();
-    } catch (e) {
-      console.error(e);
-      const msg = e?.shortMessage || e?.reason || e?.message || String(e);
-      setMsg(faucetMsg, `Claim failed: ${msg}`);
-    } finally {
-      btn.disabled = false;
-    }
-  }
-
-  // ---------- Liquidity ----------
-  function setLiqPreview(aStr, bStr, aSym, bSym) {
-    if (!aStr || !bStr) {
-      liqPreviewEl.textContent = "You will add: —";
-      return;
-    }
-    liqPreviewEl.textContent = `You will add: ${trimNum(aStr)} ${labelOf(aSym)} + ${trimNum(bStr)} ${labelOf(bSym)}`;
-  }
-
-  async function getPoolReserves(pool) {
-    try {
-      const r = await pool[CFG.fn.ammReserves]();
-      return { rA: r[0], rB: r[1] };
-    } catch (_) {
-      return null;
-    }
-  }
-
-  async function syncLiquidityInputs() {
-    if (!provider || !account) return;
-
-    const pair = getLiquidityPair();
-    const pool = makeAmm(pair.poolKey);
-    if (!pool) return;
-
-    try {
-      const [myShares, totalShares] = await Promise.all([
-        pool[CFG.fn.ammSharesOf](account),
-        pool[CFG.fn.ammTotalShares](),
-      ]);
-      lpSharesLineEl.textContent = `${myShares.toString()} / ${totalShares.toString()}`;
-    } catch (_) {
-      lpSharesLineEl.textContent = "—";
-    }
-
-    const rawA0 = (liqAAmountEl.value || "").trim();
-    const rawB0 = (liqBAmountEl.value || "").trim();
-
-    if ((!rawA0 || Number(rawA0) <= 0) && (!rawB0 || Number(rawB0) <= 0)) {
-      liqRatioEl.textContent = "—";
-      setLiqPreview("", "", pair.a, pair.b);
-      return;
-    }
-
-    const reserves = await getPoolReserves(pool);
-    if (!reserves) {
-      liqRatioEl.textContent = "unavailable";
-      setLiqPreview("", "", pair.a, pair.b);
-      return;
-    }
-
-    const rA = reserves.rA;
-    const rB = reserves.rB;
-
-    const decA = tokenDec[pair.a] ?? 18;
-    const decB = tokenDec[pair.b] ?? 18;
-
-    if (rA === 0n || rB === 0n) {
-      liqRatioEl.textContent = "empty pool (set initial amounts)";
-      if (rawA0 && rawB0) setLiqPreview(rawA0, rawB0, pair.a, pair.b);
-      else setLiqPreview("", "", pair.a, pair.b);
-      return;
-    }
-
-    const ratio = Number(ethers.formatUnits(rB, decB)) / Number(ethers.formatUnits(rA, decA));
-    liqRatioEl.textContent = isFinite(ratio) && ratio > 0
-      ? `1 ${labelOf(pair.a)} ≈ ${trimNum(ratio)} ${labelOf(pair.b)}`
-      : "—";
-
-    try {
-      liqIsSyncing = true;
-
-      if (liqLastEdited === "A") {
-        const rawA = (liqAAmountEl.value || "").trim();
-        const nA = Number(rawA);
-        if (!rawA || !isFinite(nA) || nA <= 0) {
-          liqBAmountEl.value = "";
-          setLiqPreview("", "", pair.a, pair.b);
-          return;
-        }
-
-        const amtA = ethers.parseUnits(rawA, decA);
-        const amtB = (amtA * rB) / rA;
-        const bFmt = ethers.formatUnits(amtB, decB);
-        liqBAmountEl.value = bFmt;
-
-        setLiqPreview(rawA, bFmt, pair.a, pair.b);
-      } else {
-        const rawB = (liqBAmountEl.value || "").trim();
-        const nB = Number(rawB);
-        if (!rawB || !isFinite(nB) || nB <= 0) {
-          liqAAmountEl.value = "";
-          setLiqPreview("", "", pair.a, pair.b);
-          return;
-        }
-
-        const amtB = ethers.parseUnits(rawB, decB);
-        const amtA = (amtB * rA) / rB;
-        const aFmt = ethers.formatUnits(amtA, decA);
-        liqAAmountEl.value = aFmt;
-
-        setLiqPreview(aFmt, rawB, pair.a, pair.b);
-      }
-    } finally {
-      liqIsSyncing = false;
-    }
-  }
-
-  async function ensureApprove(tokenSym, spender, amount) {
-    const token = tokenCtrs[tokenSym];
-    const allowance = await token.allowance(account, spender);
-    if (allowance >= amount) return;
-
-    setMsg(liqMsg, `Approving ${labelOf(tokenSym)}…`);
-    const tx = await token.approve(spender, amount);
-    await tx.wait();
-  }
-
-  async function doAddLiquidity() {
-    setMsg(liqMsg, "");
-
-    if (!account || !signer) {
-      await connect();
-      return;
-    }
-
-    await syncLiquidityInputs();
-
-    const pair = getLiquidityPair();
-    const poolAddr = getPoolAddress(pair.poolKey);
-    const pool = makeAmm(pair.poolKey);
-
-    const rawA = (liqAAmountEl.value || "").trim();
-    const rawB = (liqBAmountEl.value || "").trim();
-
-    const nA = Number(rawA);
-    const nB = Number(rawB);
-
-    if (!rawA || !isFinite(nA) || nA <= 0) {
-      setMsg(liqMsg, `Enter ${labelOf(pair.a)} amount > 0`);
-      return;
-    }
-    if (!rawB || !isFinite(nB) || nB <= 0) {
-      setMsg(liqMsg, `Enter ${labelOf(pair.b)} amount > 0`);
-      return;
-    }
-
-    btnAddLiquidity.disabled = true;
-
-    try {
-      const decA = tokenDec[pair.a] ?? 18;
-      const decB = tokenDec[pair.b] ?? 18;
-
-      const amtA = ethers.parseUnits(rawA, decA);
-      const amtB = ethers.parseUnits(rawB, decB);
-
-      await ensureApprove(pair.a, poolAddr, amtA);
-      await ensureApprove(pair.b, poolAddr, amtB);
-
-      setMsg(liqMsg, "Adding liquidity…");
-      const tx = await pool[CFG.fn.ammAddLiquidity](amtA, amtB);
-      const rc = await tx.wait();
-
-      setMsg(liqMsg, `✅ Liquidity added. Tx: ${rc.hash.slice(0, 10)}…`);
-
-      liqAAmountEl.value = "";
-      liqBAmountEl.value = "";
-      liqRatioEl.textContent = "—";
-      liqPreviewEl.textContent = "You will add: —";
-
-      await refreshBalances();
-      await syncLiquidityInputs();
-      await updateQuote();
-    } catch (e) {
-      console.error(e);
-      const msg = e?.shortMessage || e?.reason || e?.message || String(e);
-      setMsg(liqMsg, `Add liquidity failed: ${msg}`);
-    } finally {
-      btnAddLiquidity.disabled = false;
-    }
-  }
-
-  async function doRemoveLiquidity() {
-    setMsg(liqMsg, "");
-
-    if (!account || !signer) {
-      await connect();
-      return;
-    }
-
-    const pair = getLiquidityPair();
-    const pool = makeAmm(pair.poolKey);
-    if (!pool) {
-      setMsg(liqMsg, "Pool not available.");
-      return;
-    }
-
-    const raw = (liqRemoveSharesEl.value || "").trim();
-    const n = Number(raw);
-    if (!raw || !isFinite(n) || n <= 0) {
-      setMsg(liqMsg, "Enter shares > 0 (integer).");
-      return;
-    }
-
-    let shares;
-    try {
-      shares = BigInt(raw);
-    } catch {
-      setMsg(liqMsg, "Shares must be an integer number.");
-      return;
-    }
-
-    btnRemoveLiquidity.disabled = true;
-
-    try {
-      setMsg(liqMsg, "Removing liquidity…");
-      const tx = await pool[CFG.fn.ammRemoveLiquidity](shares);
-      const rc = await tx.wait();
-
-      setMsg(liqMsg, `✅ Liquidity removed. Tx: ${rc.hash.slice(0, 10)}…`);
-      liqRemoveSharesEl.value = "";
-
-      await refreshBalances();
-      await syncLiquidityInputs();
-      await updateQuote();
-    } catch (e) {
-      console.error(e);
-      const msg = e?.shortMessage || e?.reason || e?.message || String(e);
-      setMsg(liqMsg, `Remove liquidity failed: ${msg}`);
-    } finally {
-      btnRemoveLiquidity.disabled = false;
-    }
-  }
-
-  // ===== Events =====
-  btnConnectTop?.addEventListener("click", connect);
-  btnDisconnect?.addEventListener("click", disconnect);
-  btnReset?.addEventListener("click", resetAll);
-
-  tabSwap?.addEventListener("click", () => setTab("swap"));
-  tabFaucet?.addEventListener("click", () => setTab("faucet"));
-  tabLiquidity?.addEventListener("click", async () => {
-    setTab("liq");
-    setLiquidityLabels();
-    await refreshBalances();
-    await syncLiquidityInputs();
-  });
-
-  fromTokenSel?.addEventListener("change", async () => {
-    fromToken = fromTokenSel.value;
-    enforceSwapPair();
-    await refreshBalances();
-    await updateQuote();
-  });
-
-  toTokenSel?.addEventListener("change", async () => {
-    toToken = toTokenSel.value;
-    enforceSwapPair();
-    await refreshBalances();
-    await updateQuote();
-  });
-
-  fromAmountEl?.addEventListener("input", () => updateQuote());
-  slippageSel?.addEventListener("change", () => updateQuote());
-
-  btnFlip?.addEventListener("click", async () => {
-    [fromToken, toToken] = [toToken, fromToken];
-    setSwapSelects();
-    enforceSwapPair();
-    setMsg(swapMsg, "");
-    await refreshBalances();
-    await updateQuote();
-  });
-
-  btnSwap?.addEventListener("click", doSwap);
-
-  // faucet buttons
-  btnClaimTPI?.addEventListener("click", () => doClaim("TPI", btnClaimTPI));
-  btnClaimTXI?.addEventListener("click", () => doClaim("TXI", btnClaimTXI));
-
-  // liquidity (only 1 pool)
-  liqPoolSel?.addEventListener("change", async () => {
-    setLiquidityLabels();
-    liqAAmountEl.value = "";
-    liqBAmountEl.value = "";
-    liqRemoveSharesEl.value = "";
-    liqRatioEl.textContent = "—";
-    liqPreviewEl.textContent = "You will add: —";
-    setMsg(liqMsg, "");
-    await refreshBalances();
-    await syncLiquidityInputs();
-  });
-
-  liqAAmountEl?.addEventListener("input", async () => {
-    if (liqIsSyncing) return;
-    liqLastEdited = "A";
-    await syncLiquidityInputs();
-  });
-
-  liqBAmountEl?.addEventListener("input", async () => {
-    if (liqIsSyncing) return;
-    liqLastEdited = "B";
-    await syncLiquidityInputs();
-  });
-
-  btnAddLiquidity?.addEventListener("click", doAddLiquidity);
-  btnRemoveLiquidity?.addEventListener("click", doRemoveLiquidity);
-
-  // wallet events
-  if (window.ethereum) {
-    window.ethereum.on?.("accountsChanged", async () => {
-      disconnect();
-      await connect();
+}
+
+function calcLiquidityB(amountA) {
+  if (!state?.reserves) return 0;
+  const { reserveA, reserveB } = state.reserves;
+  if (!reserveA || !reserveB) return 0;
+  const price = reserveB / reserveA;
+  return amountA * price;
+}
+
+/**
+ * Liquidity: Add (wallet-sign)
+ */
+async function doAddLiquidity() {
+  try {
+    setMsg(el.liqMsg, "");
+
+    if (!connectedAccountId) throw new Error("Connect wallet first");
+
+    const amountA = Number(el.liqAmountA.value);
+    if (!Number.isFinite(amountA) || amountA <= 0) throw new Error("Invalid amountA");
+
+    const poolKey = getDefaultPoolKey();
+
+    el.btnAddLiquidity.disabled = true;
+
+    const build = await apiPost("/api/tx/build/liquidity/add", {
+      poolKey,
+      accountId: connectedAccountId,
+      amountA,
     });
 
-    window.ethereum.on?.("chainChanged", async () => {
-      window.location.reload();
+    const submitted = await walletSignAndSubmit(build.pendingId, build.txBytesBase64);
+    setMsg(el.liqMsg, `✅ Liquidity added. Tx: ${submitted.txId || ""}`);
+
+    await new Promise((r) => setTimeout(r, 1200));
+    // refresh state to get new reserves for ratio
+    state = await apiGet("/api/state");
+    await refreshBalances();
+    await doQuote();
+    await refreshLiquidityPosition();
+  } catch (e) {
+    setMsg(el.liqMsg, `❌ ${e.message}`, false);
+  } finally {
+    el.btnAddLiquidity.disabled = false;
+  }
+}
+
+/**
+ * Liquidity: Remove (wallet-sign)
+ */
+async function doRemoveLiquidity() {
+  try {
+    setMsg(el.liqMsg, "");
+
+    if (!connectedAccountId) throw new Error("Connect wallet first");
+
+    const percent = Number(el.liqRemovePct.value);
+    if (!Number.isFinite(percent) || percent <= 0 || percent > 100) throw new Error("Invalid percent (1..100)");
+
+    const poolKey = getDefaultPoolKey();
+
+    el.btnRemoveLiquidity.disabled = true;
+
+    const build = await apiPost("/api/tx/build/liquidity/remove", {
+      poolKey,
+      accountId: connectedAccountId,
+      percent,
     });
+
+    const submitted = await walletSignAndSubmit(build.pendingId, build.txBytesBase64);
+    setMsg(el.liqMsg, `✅ Liquidity removed. Tx: ${submitted.txId || ""}`);
+
+    await new Promise((r) => setTimeout(r, 1200));
+    state = await apiGet("/api/state");
+    await refreshBalances();
+    await doQuote();
+    await refreshLiquidityPosition();
+  } catch (e) {
+    setMsg(el.liqMsg, `❌ ${e.message}`, false);
+  } finally {
+    el.btnRemoveLiquidity.disabled = false;
+  }
+}
+
+/**
+ * =========================
+ * Faucet
+ * =========================
+ */
+async function faucetCheck() {
+  try {
+    setMsg(el.faucetMsg, "");
+    const accountId = String(el.faucetAccountId.value || "").trim();
+    if (!accountId) throw new Error("Nhập Account ID.");
+    const j = await apiGet(`/api/faucet/status?accountId=${encodeURIComponent(accountId)}`);
+    setMsg(el.faucetMsg, JSON.stringify(j, null, 2));
+  } catch (e) {
+    setMsg(el.faucetMsg, `❌ ${e.message}`, false);
+  }
+}
+
+async function faucetClaim() {
+  try {
+    setMsg(el.faucetMsg, "");
+    const accountId = String(el.faucetAccountId.value || "").trim();
+    if (!accountId) throw new Error("Nhập Account ID.");
+
+    const j = await apiPost("/api/faucet/claim", { accountId });
+    setMsg(el.faucetMsg, `✅ Claimed. Tx: ${j.txId || j.transactionId || ""}`);
+
+    if (accountId === connectedAccountId) {
+      await new Promise((r) => setTimeout(r, 1200));
+      await refreshBalances();
+    }
+  } catch (e) {
+    setMsg(el.faucetMsg, `❌ ${e.message}`, false);
+  }
+}
+
+/**
+ * =========================
+ * Main
+ * =========================
+ */
+async function main() {
+  const cfg = getConfig();
+  if (el.networkName) el.networkName.textContent = cfg.networkName || "Hedera Testnet";
+
+  // load state
+  state = await apiGet("/api/state");
+
+  // token selects
+  fillTokenSelects();
+
+  // default pool info
+  el.poolLine.textContent = state.pool?.id || "—";
+
+  // liquidity token labels
+  if (el.liqTokenA) el.liqTokenA.textContent = state.pool?.tokenA?.symbol || "tokenA";
+  if (el.liqTokenB) el.liqTokenB.textContent = state.pool?.tokenB?.symbol || "tokenB";
+
+  // init wallet (optional)
+  await initWalletIfPossible();
+
+  if (connectedAccountId) el.faucetAccountId.value = connectedAccountId;
+
+  // init sign toggle
+  if (el.signModeToggle) {
+    el.signModeToggle.checked = false; // default Backend
+    syncSignLabel();
+    el.signModeToggle.addEventListener("change", () => syncSignLabel());
   }
 
-  // init
-  networkNameEl.textContent = CFG.chain.chainName;
-  setConnectedUI(false);
-  setTab("swap");
+  syncWalletStatus();
+  await refreshBalances();
+  await doQuote();
+  await refreshLiquidityPosition();
 
-  setSwapSelects();
-  enforceSwapPair();
-  setLiquidityLabels();
-  setSwapPoolLine();
-})();
+  // handlers
+  el.tabSwap.addEventListener("click", () => showPanel("swap"));
+  el.tabLiquidity.addEventListener("click", () => showPanel("liq"));
+  el.tabFaucet.addEventListener("click", () => showPanel("faucet"));
+
+  el.btnConnect.addEventListener("click", connectWallet);
+  el.btnDisconnect.addEventListener("click", disconnectAll);
+
+  el.fromAmount.addEventListener("input", scheduleQuote);
+  el.fromSel.addEventListener("change", async () => {
+    await refreshBalances();
+    await doQuote();
+  });
+  el.toSel.addEventListener("change", async () => {
+    await refreshBalances();
+    await doQuote();
+  });
+  el.slippageSel.addEventListener("change", doQuote);
+
+  el.btnFlip.addEventListener("click", async () => {
+    const a = el.fromSel.value;
+    el.fromSel.value = el.toSel.value;
+    el.toSel.value = a;
+    await refreshBalances();
+    await doQuote();
+  });
+
+  el.btnSwap.addEventListener("click", doSwap);
+
+  // liquidity auto-fill B when input A
+  el.liqAmountA.addEventListener("input", () => {
+    const v = Number(el.liqAmountA.value);
+    if (!Number.isFinite(v)) return;
+    el.liqAmountB.value = fmt(calcLiquidityB(v), 6);
+  });
+
+  el.btnAddLiquidity.addEventListener("click", doAddLiquidity);
+  el.btnRemoveLiquidity.addEventListener("click", doRemoveLiquidity);
+
+  el.btnFaucetCheck.addEventListener("click", faucetCheck);
+  el.btnFaucetClaim.addEventListener("click", faucetClaim);
+
+  el.btnReset.addEventListener("click", async () => {
+    el.fromAmount.value = "";
+    el.toAmount.value = "";
+    setMsg(el.swapMsg, "");
+    await doQuote();
+  });
+
+  window.__hashswap = {
+    get state() { return state; },
+    get accountId() { return connectedAccountId; },
+    refreshBalances,
+    doQuote,
+    doSwap,
+  };
+}
+
+main().catch((e) => {
+  console.error(e);
+  alert(e.message || String(e));
+});
