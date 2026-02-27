@@ -72,6 +72,11 @@ function getConfig() {
   return cfg;
 }
 
+function isBackendEnabled() {
+  const cfg = getConfig();
+  return !!cfg.apiBase;
+}
+
 function fmt(num, digits = 6) {
   if (num === null || num === undefined) return "0";
   const n = Number(num);
@@ -108,7 +113,7 @@ function bytesToBase64(bytes) {
  * Global app state
  * =========================
  */
-let state = null; // from /api/state
+let state = null; // from /api/state (or demo state)
 let connectedAccountId = null; // "0.0.x"
 let dAppConnector = null;
 
@@ -136,6 +141,12 @@ function showPanel(name) {
  */
 async function apiGet(path) {
   const { apiBase } = getConfig();
+
+  // DEMO MODE: no backend
+  if (!apiBase) {
+    throw new Error("Backend disabled (demo mode).");
+  }
+
   const r = await fetch(`${apiBase}${path}`);
   const j = await r.json().catch(() => ({}));
   if (!r.ok || j?.ok === false) throw new Error(j?.error || `API ${path} failed: ${r.status}`);
@@ -144,6 +155,12 @@ async function apiGet(path) {
 
 async function apiPost(path, body) {
   const { apiBase } = getConfig();
+
+  // DEMO MODE: no backend
+  if (!apiBase) {
+    throw new Error("Backend disabled (demo mode).");
+  }
+
   const r = await fetch(`${apiBase}${path}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -184,6 +201,14 @@ async function fetchBalancesFromMirror(accountId) {
 
 async function refreshBalances() {
   if (!connectedAccountId || !state) {
+    el.balancesLine.textContent = "hUSD: 0 | hEUR: 0 | hVND: 0";
+    el.fromBal.textContent = "0";
+    el.toBal.textContent = "0";
+    return;
+  }
+
+  // Demo mode => just show zeros
+  if (!state?.mirror) {
     el.balancesLine.textContent = "hUSD: 0 | hEUR: 0 | hVND: 0";
     el.fromBal.textContent = "0";
     el.toBal.textContent = "0";
@@ -287,9 +312,26 @@ async function doQuote() {
     return;
   }
 
+  // Demo mode: show 1:1 estimate, no backend calls
+  if (!isBackendEnabled()) {
+    lastQuote = {
+      amountInTokens: n,
+      amountOutTokens: n,
+      poolId: "demo",
+    };
+    el.toAmount.value = fmt(n, 6);
+    el.rateLine.textContent = `1 ${from} ≈ 1 ${to} (demo)`;
+    el.poolLine.textContent = "Demo (no backend)";
+    return;
+  }
+
   try {
     const slippageBps = getSlippageBps();
-    const q = await apiGet(`/api/quote?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&amount=${encodeURIComponent(n)}&slippageBps=${slippageBps}`);
+    const q = await apiGet(
+      `/api/quote?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&amount=${encodeURIComponent(
+        n
+      )}&slippageBps=${slippageBps}`
+    );
 
     lastQuote = q;
     el.toAmount.value = fmt(q.amountOutTokens, 6);
@@ -332,9 +374,7 @@ async function initWalletIfPossible() {
   await dAppConnector.init({ logger: "error" });
 
   if (dAppConnector.signers?.length) {
-    connectedAccountId = dAppConnector.signers[dAppConnector.signers.length - 1]
-      .getAccountId()
-      .toString();
+    connectedAccountId = dAppConnector.signers[dAppConnector.signers.length - 1].getAccountId().toString();
   }
   return dAppConnector;
 }
@@ -371,9 +411,7 @@ async function connectWallet() {
     }
 
     if (dAppConnector.signers?.length) {
-      connectedAccountId = dAppConnector.signers[dAppConnector.signers.length - 1]
-        .getAccountId()
-        .toString();
+      connectedAccountId = dAppConnector.signers[dAppConnector.signers.length - 1].getAccountId().toString();
     }
 
     el.faucetAccountId.value = connectedAccountId || "";
@@ -427,6 +465,10 @@ async function walletSignAndSubmit(pendingId, txBytesBase64) {
 async function doSwap() {
   try {
     setMsg(el.swapMsg, "");
+
+    if (!isBackendEnabled()) {
+      throw new Error("Demo mode: backend disabled.");
+    }
 
     if (!connectedAccountId) {
       throw new Error("Chưa có accountId. Hãy Connect ví hoặc nhập accountId ở Faucet.");
@@ -490,7 +532,7 @@ async function doSwap() {
  * =========================
  */
 function getDefaultPoolKey() {
-  return state?.pool?.poolKey || (state?.pools?.[0]?.poolKey) || "hUSD-hEUR";
+  return state?.pool?.poolKey || state?.pools?.[0]?.poolKey || "hUSD-hEUR";
 }
 
 async function refreshLiquidityPosition() {
@@ -501,15 +543,26 @@ async function refreshLiquidityPosition() {
       return;
     }
 
+    // Demo mode: no backend
+    if (!isBackendEnabled()) {
+      el.liqPosLine.textContent = "Demo (no backend)";
+      el.liqEstLine.textContent = "—";
+      return;
+    }
+
     const poolKey = getDefaultPoolKey();
-    const j = await apiGet(`/api/liquidity/position?accountId=${encodeURIComponent(connectedAccountId)}&poolKey=${encodeURIComponent(poolKey)}`);
+    const j = await apiGet(
+      `/api/liquidity/position?accountId=${encodeURIComponent(connectedAccountId)}&poolKey=${encodeURIComponent(poolKey)}`
+    );
 
     const symA = state.pool?.tokenA?.symbol || "tokenA";
     const symB = state.pool?.tokenB?.symbol || "tokenB";
 
     el.liqPosLine.textContent = `${fmt(j.depositedA, 6)} ${symA} | ${fmt(j.depositedB, 6)} ${symB}`;
-    el.liqEstLine.textContent =
-      `${fmt(j.estimateRemoveAll.amountA, 6)} ${symA} | ${fmt(j.estimateRemoveAll.amountB, 6)} ${symB}`;
+    el.liqEstLine.textContent = `${fmt(j.estimateRemoveAll.amountA, 6)} ${symA} | ${fmt(
+      j.estimateRemoveAll.amountB,
+      6
+    )} ${symB}`;
   } catch {
     // silent
   }
@@ -530,6 +583,7 @@ async function doAddLiquidity() {
   try {
     setMsg(el.liqMsg, "");
 
+    if (!isBackendEnabled()) throw new Error("Demo mode: backend disabled.");
     if (!connectedAccountId) throw new Error("Connect wallet first");
 
     const amountA = Number(el.liqAmountA.value);
@@ -549,7 +603,6 @@ async function doAddLiquidity() {
     setMsg(el.liqMsg, `✅ Liquidity added. Tx: ${submitted.txId || ""}`);
 
     await new Promise((r) => setTimeout(r, 1200));
-    // refresh state to get new reserves for ratio
     state = await apiGet("/api/state");
     await refreshBalances();
     await doQuote();
@@ -568,6 +621,7 @@ async function doRemoveLiquidity() {
   try {
     setMsg(el.liqMsg, "");
 
+    if (!isBackendEnabled()) throw new Error("Demo mode: backend disabled.");
     if (!connectedAccountId) throw new Error("Connect wallet first");
 
     const percent = Number(el.liqRemovePct.value);
@@ -606,6 +660,9 @@ async function doRemoveLiquidity() {
 async function faucetCheck() {
   try {
     setMsg(el.faucetMsg, "");
+
+    if (!isBackendEnabled()) throw new Error("Demo mode: backend disabled.");
+
     const accountId = String(el.faucetAccountId.value || "").trim();
     if (!accountId) throw new Error("Nhập Account ID.");
     const j = await apiGet(`/api/faucet/status?accountId=${encodeURIComponent(accountId)}`);
@@ -618,6 +675,9 @@ async function faucetCheck() {
 async function faucetClaim() {
   try {
     setMsg(el.faucetMsg, "");
+
+    if (!isBackendEnabled()) throw new Error("Demo mode: backend disabled.");
+
     const accountId = String(el.faucetAccountId.value || "").trim();
     if (!accountId) throw new Error("Nhập Account ID.");
 
@@ -640,20 +700,48 @@ async function faucetClaim() {
  */
 async function main() {
   const cfg = getConfig();
+  const backendEnabled = !!cfg.apiBase;
+
   if (el.networkName) el.networkName.textContent = cfg.networkName || "Hedera Testnet";
 
-  // load state
-  state = await apiGet("/api/state");
+  if (backendEnabled) {
+    // load state from backend
+    state = await apiGet("/api/state");
+    fillTokenSelects();
 
-  // token selects
-  fillTokenSelects();
+    el.poolLine.textContent = state.pool?.id || "—";
+    if (el.liqTokenA) el.liqTokenA.textContent = state.pool?.tokenA?.symbol || "tokenA";
+    if (el.liqTokenB) el.liqTokenB.textContent = state.pool?.tokenB?.symbol || "tokenB";
+  } else {
+    // DEMO MODE state (minimal UI only)
+    state = {
+      tokens: [
+        { symbol: "hUSD", tokenId: "", decimals: 6 },
+        { symbol: "hEUR", tokenId: "", decimals: 6 },
+        { symbol: "hVND", tokenId: "", decimals: 6 },
+      ],
+      pool: { id: "demo", poolKey: "hUSD-hEUR", tokenA: { symbol: "hUSD" }, tokenB: { symbol: "hEUR" } },
+      reserves: { reserveA: 1, reserveB: 1 },
+      mirror: "", // no mirror in demo
+      decimals: 6,
+    };
 
-  // default pool info
-  el.poolLine.textContent = state.pool?.id || "—";
+    fillTokenSelects();
+    el.poolLine.textContent = "Demo (no backend)";
+    if (el.liqTokenA) el.liqTokenA.textContent = "hUSD";
+    if (el.liqTokenB) el.liqTokenB.textContent = "hEUR";
 
-  // liquidity token labels
-  if (el.liqTokenA) el.liqTokenA.textContent = state.pool?.tokenA?.symbol || "tokenA";
-  if (el.liqTokenB) el.liqTokenB.textContent = state.pool?.tokenB?.symbol || "tokenB";
+    // Disable actions that require backend
+    if (el.btnSwap) el.btnSwap.disabled = true;
+    if (el.btnAddLiquidity) el.btnAddLiquidity.disabled = true;
+    if (el.btnRemoveLiquidity) el.btnRemoveLiquidity.disabled = true;
+    if (el.btnFaucetCheck) el.btnFaucetCheck.disabled = true;
+    if (el.btnFaucetClaim) el.btnFaucetClaim.disabled = true;
+
+    setMsg(el.swapMsg, "Demo mode: backend disabled", false);
+    setMsg(el.liqMsg, "Demo mode: backend disabled", false);
+    setMsg(el.faucetMsg, "Demo mode: backend disabled", false);
+  }
 
   // init wallet (optional)
   await initWalletIfPossible();
@@ -722,8 +810,12 @@ async function main() {
   });
 
   window.__hashswap = {
-    get state() { return state; },
-    get accountId() { return connectedAccountId; },
+    get state() {
+      return state;
+    },
+    get accountId() {
+      return connectedAccountId;
+    },
     refreshBalances,
     doQuote,
     doSwap,
